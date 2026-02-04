@@ -1,0 +1,175 @@
+// Prisma Schema for TOEIC Practice Backend
+// Database: PostgreSQL
+// ORM: Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MODEL - Authentication & Profile
+// ============================================
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  password    String    // Hashed with bcrypt
+  name        String
+  phoneNumber String?
+  dateOfBirth DateTime?
+  gender      Gender?
+  avatarUrl   String?
+  role        Role      @default(STUDENT)
+  
+  // TOEIC Level (CEFR framework)
+  cefrLevel   CEFRLevel? // A1, A2, B1, B2, C1 (nullable)
+  targetScore Int?       // Optional target score (e.g., 750)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  STUDENT
+  STAFF
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum CEFRLevel {
+  A1  // Beginner (120-220)
+  A2  // Elementary (225-545)
+  B1  // Intermediate (550-780)
+  B2  // Upper Intermediate (785-940)
+  C1  // Advanced (945-990)
+}
+
+// ============================================
+// PASSWORD RESET TOKEN MODEL
+// ============================================
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String   // 6-digit OTP code
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
+// EXAM BANK MODELS
+// ============================================
+
+model Test {
+  id              String     @id @default(uuid())
+  title           String     // "TOEIC Practice Test 1"
+  testType        TestType   // LISTENING or READING
+  difficulty      Difficulty
+  status          TestStatus @default(LOCKED)
+  duration        Int        // Thời gian (phút)
+  totalQuestions  Int        // Tổng số câu hỏi
+  parts           Part[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([status])
+  @@index([difficulty])
+  @@map("tests")
+}
+
+model Part {
+  id              String     @id @default(uuid())
+  testId          String
+  test            Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
+  partNumber      Int        // 1-7
+  partName        String     // "Part 1: Photographs"
+  instructions    String?    // Hướng dẫn làm bài
+  status          PartStatus @default(ACTIVE) // Active/Inactive
+  orderIndex      Int        // Display order (same as partNumber)
+  audioUrl        String?    // URL audio cho Part (Listening only)
+  audioDuration   Int?       // Thời lượng audio (giây)
+  totalQuestions  Int        // Số câu hỏi trong Part
+  timeLimit       Int?       // Thời gian làm bài (phút)
+  questions       Question[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([testId, partNumber])
+  @@index([testId])
+  @@map("parts")
+}
+
+model Question {
+  id              String   @id @default(uuid())
+  partId          String
+  part            Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  questionNumber  Int      // Số thứ tự trong Part (1, 2, 3...)
+  passage         String?  // Đoạn văn (Part 6 only - shared by 4 questions)
+  questionText    String?  // Nội dung câu hỏi (null cho Part 1)
+  imageUrl        String?  // Hình ảnh (Part 1, 7)
+  optionA         String?  // Đáp án A
+  optionB         String?  // Đáp án B
+  optionC         String?  // Đáp án C
+  optionD         String?  // Đáp án D
+  correctAnswer   String   // "A", "B", "C", "D"
+  explanation     String?  // Giải thích đáp án
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([partId, questionNumber])
+  @@index([partId])
+  @@map("questions")
+}
+
+// ============================================
+// EXAM BANK ENUMS
+// ============================================
+
+enum Difficulty {
+  EASY    // A1-A2
+  MEDIUM  // B1-B2
+  HARD    // C1
+}
+
+enum TestStatus {
+  LOCKED    // Khóa - Học viên không làm được
+  UNLOCKED  // Mở - Học viên làm được
+}
+
+enum TestType {
+  LISTENING
+  READING
+}
+
+enum PartStatus {
+  ACTIVE
+  INACTIVE
+}
