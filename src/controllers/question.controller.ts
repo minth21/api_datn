@@ -88,20 +88,24 @@ export const createQuestion = async (
             }
         }
 
-        // Check if question number already exists in this part
-        const existingQuestion = await prisma.question.findUnique({
+        // Check if question number already exists in the ENTIRE TEST
+        // We need to find if any question in any part of this test has this number
+        const existingQuestionInTest = await prisma.question.findFirst({
             where: {
-                partId_questionNumber: {
-                    partId,
-                    questionNumber: qNum,
+                part: {
+                    testId: part.testId
                 },
+                questionNumber: qNum
             },
+            include: {
+                part: true
+            }
         });
 
-        if (existingQuestion) {
+        if (existingQuestionInTest) {
             res.status(400).json({
                 success: false,
-                message: `Câu hỏi số ${questionNumber} đã tồn tại trong Part này`,
+                message: `Câu hỏi số ${questionNumber} đã tồn tại trong Part ${existingQuestionInTest.part.partNumber} của bài test này.`,
             });
             return;
         }
@@ -316,9 +320,19 @@ export const createBatchQuestions = async (
         const questionsToInsert = questions.map((q: any, index: number) => {
             const qNum = q.questionNumber ? q.questionNumber : (startQuestionNumber + index);
 
+            // Validate Part 5 question number range
+            if (part.partNumber === 5 && (qNum < 101 || qNum > 130)) {
+                throw new Error(`Part 5 chỉ chấp nhận câu hỏi từ 101-130. Câu ${qNum} không hợp lệ.`);
+            }
+
             // Validate Part 6 question number range
             if (part.partNumber === 6 && (qNum < 131 || qNum > 146)) {
                 throw new Error(`Part 6 chỉ chấp nhận câu hỏi từ 131-146. Câu ${qNum} không hợp lệ.`);
+            }
+
+            // Validate Part 7 question number range
+            if (part.partNumber === 7 && (qNum < 147 || qNum > 200)) {
+                throw new Error(`Part 7 chỉ chấp nhận câu hỏi từ 147-200. Câu ${qNum} không hợp lệ.`);
             }
 
             return {
@@ -334,6 +348,39 @@ export const createBatchQuestions = async (
                 explanation: q.explanation,
             };
         });
+
+        // Check for duplicate question numbers in ENTIRE TEST
+        const questionNumbers = questionsToInsert.map(q => q.questionNumber);
+
+        const existingQuestionsInTest = await prisma.question.findMany({
+            where: {
+                part: {
+                    testId: part.testId
+                },
+                questionNumber: {
+                    in: questionNumbers
+                }
+            },
+            select: {
+                questionNumber: true,
+                part: {
+                    select: { partNumber: true }
+                }
+            }
+        });
+
+        if (existingQuestionsInTest.length > 0) {
+            const duplicateNumbers = existingQuestionsInTest.map(q => q.questionNumber).sort((a, b) => a - b);
+            // Show where they exist
+            const duplicatesInfo = existingQuestionsInTest.map(q => `${q.questionNumber} (Part ${q.part.partNumber})`).join(', ');
+
+            res.status(400).json({
+                success: false,
+                message: `Các câu hỏi sau đã tồn tại trong bài test: ${duplicatesInfo}. Vui lòng kiểm tra lại.`,
+                duplicates: duplicateNumbers
+            });
+            return;
+        }
 
         // Bulk insert
         await prisma.question.createMany({
@@ -415,9 +462,14 @@ export const importQuestions = async (
         }
 
         // SMART IMPORT LOGIC: Fill in only missing questions
-        // 1. Get all existing question numbers for this part
+        // 1. Get all existing question numbers for this ENTIRE TEST
+        // (If replace mode, we already deleted questions in THIS part, so we get questions from OTHER parts)
         const existingQuestions = await prisma.question.findMany({
-            where: { partId },
+            where: {
+                part: {
+                    testId: part.testId
+                }
+            },
             select: { questionNumber: true },
         });
         const existingSet = new Set(existingQuestions.map(q => q.questionNumber));
