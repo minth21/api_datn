@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadExamImage } from '../controllers/upload.controller';
+import { uploadExamImage, uploadAudio } from '../controllers/upload.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -10,13 +10,13 @@ const storage = multer.memoryStorage();
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit
+        fileSize: 50 * 1024 * 1024, // 50MB limit
     },
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) {
             cb(null, true);
         } else {
-            cb(new Error('Only images are allowed'));
+            cb(new Error('Only images and audio are allowed'));
         }
     }
 });
@@ -24,5 +24,9 @@ const upload = multer({
 // Route: POST /api/upload/image
 // Protected by auth middleware
 router.post('/image', authMiddleware, upload.single('image'), uploadExamImage);
+
+// Route: POST /api/upload/audio
+// Protected by auth middleware
+router.post('/audio', authMiddleware, upload.single('audio'), uploadAudio);
 
 export default router;

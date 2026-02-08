@@ -53,6 +53,9 @@ export const createQuestion = async (
             optionD,
             correctAnswer,
             explanation,
+            audioUrl,
+            imageUrl, // Add imageUrl
+            transcript
         } = req.body;
 
         // Get part info to validate question number range
@@ -121,6 +124,9 @@ export const createQuestion = async (
                 optionD,
                 correctAnswer,
                 explanation,
+                audioUrl,
+                imageUrl, // Add imageUrl
+                transcript
             },
         });
 
@@ -154,7 +160,10 @@ export const updateQuestion = async (
             optionD,
             correctAnswer,
             explanation,
-            passage, // Add passage
+            passage, // Add passage to update
+            audioUrl,
+            imageUrl, // Add imageUrl
+            transcript
         } = req.body;
 
         const updatedQuestion = await prisma.question.update({
@@ -169,6 +178,9 @@ export const updateQuestion = async (
                 correctAnswer,
                 explanation,
                 passage, // Add passage to update
+                audioUrl,
+                imageUrl, // Add imageUrl
+                transcript
             },
         });
 
@@ -194,9 +206,45 @@ export const deleteQuestion = async (
     try {
         const { id } = req.params;
 
+        // Get question to extract image/audio URLs before deleting
+        const question = await prisma.question.findUnique({
+            where: { id },
+        });
+
+        if (!question) {
+            res.status(404).json({
+                success: false,
+                message: 'Câu hỏi không tồn tại',
+            });
+            return;
+        }
+
+        // Delete from database first
         await prisma.question.delete({
             where: { id },
         });
+
+        // Then try to delete from Cloudinary (don't fail if this fails)
+        try {
+            const { deleteFromCloudinary, extractPublicId } = await import('../config/cloudinary.config');
+
+            if (question.imageUrl) {
+                const publicId = extractPublicId(question.imageUrl);
+                if (publicId) {
+                    await deleteFromCloudinary(publicId);
+                }
+            }
+
+            if (question.audioUrl) {
+                const publicId = extractPublicId(question.audioUrl);
+                if (publicId) {
+                    await deleteFromCloudinary(publicId);
+                }
+            }
+        } catch (cloudinaryError) {
+            // Log but don't fail the request
+            console.error('Failed to delete from Cloudinary:', cloudinaryError);
+        }
 
         res.status(200).json({
             success: true,
@@ -284,7 +332,7 @@ export const createBatchQuestions = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
-        const { passage, questions } = req.body; // questions is array of { questionText, options..., correctAnswer, explanation }
+        const { passage, questions, audioUrl, transcript } = req.body; // questions is array of { questionText, options..., correctAnswer, explanation }
 
         if (!passage || !Array.isArray(questions) || questions.length === 0) {
             res.status(400).json({
@@ -346,6 +394,8 @@ export const createBatchQuestions = async (
                 optionD: q.optionD,
                 correctAnswer: q.correctAnswer,
                 explanation: q.explanation,
+                audioUrl: audioUrl || q.audioUrl,
+                transcript: transcript || q.transcript,
             };
         });
 

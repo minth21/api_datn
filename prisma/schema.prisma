@@ -111,7 +111,8 @@ model Part {
   test            Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
   partNumber      Int        // 1-7
   partName        String     // "Part 1: Photographs"
-  instructions    String?    // Hướng dẫn làm bài
+  instructions    String?    @db.Text // Hướng dẫn làm bài
+  instructionImgUrl String?  // Ảnh minh họa hướng dẫn
   status          PartStatus @default(ACTIVE) // Active/Inactive
   orderIndex      Int        // Display order (same as partNumber)
   audioUrl        String?    // URL audio cho Part (Listening only)
@@ -132,15 +133,17 @@ model Question {
   partId          String
   part            Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
   questionNumber  Int      // Số thứ tự trong Part (1, 2, 3...)
-  passage         String?  // Đoạn văn (Part 6 only - shared by 4 questions)
-  questionText    String?  // Nội dung câu hỏi (null cho Part 1)
+  passage         String?  @db.Text // Đoạn văn (Part 6 only - shared by 4 questions)
+  questionText    String?  @db.Text // Nội dung câu hỏi (null cho Part 1)
   imageUrl        String?  // Hình ảnh (Part 1, 7)
   optionA         String?  // Đáp án A
   optionB         String?  // Đáp án B
   optionC         String?  // Đáp án C
   optionD         String?  // Đáp án D
   correctAnswer   String   // "A", "B", "C", "D"
-  explanation     String?  // Giải thích đáp án
+  explanation     String?  @db.Text // Giải thích đáp án
+  audioUrl        String?  // Audio URL (Parts 1, 2, 3, 4)
+  transcript      String?  // Transcript for audio
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

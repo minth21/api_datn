@@ -72,6 +72,34 @@ export const uploadExamImageToCloudinary = (
 };
 
 /**
+ * Upload audio to Cloudinary (resource_type: video)
+ */
+export const uploadAudioToCloudinary = (
+    fileBuffer: Buffer,
+    folder: string = 'toeic_practice/exam-audio'
+): Promise<any> => {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: folder,
+                resource_type: 'video', // Cloudinary handles audio as video
+            },
+            (error, result) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            }
+        );
+
+        // Create a readable stream from buffer and pipe to Cloudinary
+        const streamifier = require('streamifier');
+        streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+    });
+};
+
+/**
  * Delete file from Cloudinary
  */
 export const deleteFromCloudinary = async (

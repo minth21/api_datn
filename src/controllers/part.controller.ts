@@ -88,7 +88,7 @@ export const createPart = async (
 ): Promise<void> => {
     try {
         const { testId } = req.params;
-        const { partNumber, partName, totalQuestions, instructions, status, orderIndex, timeLimit } = req.body;
+        const { partNumber, partName, totalQuestions, instructions, instructionImgUrl, status, orderIndex, timeLimit } = req.body;
 
         // Validate totalQuestions
         const totalQuestionsNum = parseInt(totalQuestions);
@@ -123,6 +123,7 @@ export const createPart = async (
                 partName,
                 totalQuestions: totalQuestionsNum,
                 instructions: instructions || null,
+                instructionImgUrl: instructionImgUrl || null,
                 status: status || 'ACTIVE',
                 orderIndex: orderIndex !== undefined ? parseInt(orderIndex) : parseInt(partNumber),
                 timeLimit: timeLimit ? parseInt(timeLimit) : null,
@@ -150,7 +151,7 @@ export const updatePart = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
-        const { partNumber, partName, totalQuestions, instructions, status, orderIndex, timeLimit } = req.body;
+        const { partNumber, partName, totalQuestions, instructions, instructionImgUrl, status, orderIndex, timeLimit } = req.body;
 
         // Validate totalQuestions if provided
         if (totalQuestions !== undefined) {
@@ -171,9 +172,11 @@ export const updatePart = async (
                 partName,
                 totalQuestions: totalQuestions ? parseInt(totalQuestions) : undefined,
                 instructions: instructions !== undefined ? instructions : undefined,
+                instructionImgUrl: instructionImgUrl !== undefined ? instructionImgUrl : undefined,
                 status: status || undefined,
                 orderIndex: orderIndex !== undefined ? parseInt(orderIndex) : undefined,
                 timeLimit: timeLimit !== undefined ? (timeLimit ? parseInt(timeLimit) : null) : undefined,
+                audioUrl: req.body.audioUrl, // Add audioUrl support
             },
         });
 
