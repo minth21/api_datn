@@ -13,7 +13,6 @@ export interface RegisterDto {
     dateOfBirth?: string; // ISO 8601 date string
     gender?: string; // MALE, FEMALE, OTHER
     role?: string; // STUDENT, STAFF, ADMIN (optional, defaults to STUDENT)
-    cefrLevel?: string; // A1, A2, B1, B2, C1 (from onboarding)
 }
 
 // User Response DTO
@@ -26,8 +25,9 @@ export interface UserDto {
     dateOfBirth?: string; // ISO 8601 date string
     gender?: string; // MALE, FEMALE, OTHER
     avatarUrl?: string;
-    cefrLevel?: string; // A1, A2, B1, B2, C1
+    progress?: number; // 0-100
     targetScore?: number; // Optional target score
+    hasPassword: boolean;
     createdAt: string; // ISO 8601 date string
     totalTestsTaken: number;
     averageScore: number;
@@ -73,4 +73,10 @@ export interface ResetPasswordDto {
 export interface PasswordResetResponseDto {
     success: boolean;
     message: string;
+}
+
+// Change Password Request DTO
+export interface ChangePasswordDto {
+    oldPassword?: string;
+    newPassword: string;
 }

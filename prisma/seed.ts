@@ -18,7 +18,7 @@ async function main() {
         create: {
             email: 'admin@gmail.com',
             password: hashedPassword,
-            name: 'Administrator',
+            name: 'Quản trị viên',
             role: 'ADMIN',
         },
     });

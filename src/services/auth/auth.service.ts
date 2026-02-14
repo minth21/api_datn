@@ -3,7 +3,9 @@ import {
     LoginResponseDto,
     UserDto,
     RegisterDto,
-    PasswordResetResponseDto
+    PasswordResetResponseDto,
+    ApiResponse,
+    ChangePasswordDto
 } from '../../dto/auth/auth.dto';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../../config/constants';
 import { logger } from '../../utils/logger';
@@ -83,7 +85,7 @@ export class AuthService {
      * Đăng ký user mới
      */
     async register(registerDto: RegisterDto): Promise<LoginResponseDto> {
-        const { name, email, password, phoneNumber, dateOfBirth, gender, cefrLevel } = registerDto;
+        const { name, email, password, phoneNumber, dateOfBirth, gender } = registerDto;
 
         logger.info(`Register attempt for email: ${email}`);
 
@@ -114,7 +116,7 @@ export class AuthService {
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
                     gender: gender as any, // Cast to Gender enum if provided
                     role: 'STUDENT',
-                    cefrLevel: cefrLevel as any, // Save CEFR level from onboarding
+                    // cefrLevel removed
                 },
             });
 
@@ -388,6 +390,133 @@ export class AuthService {
     }
 
     /**
+     * Đăng nhập với Google ID Token
+     */
+    async googleLogin(idToken: string): Promise<LoginResponseDto> {
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client();
+
+        try {
+            logger.info(`Verifying Google ID Token`);
+            // Hardcoded Client ID to match Flutter app
+            const CLIENT_ID = '112210310564-j3r1bsrtohpb30d53vfao2kp7knchfrl.apps.googleusercontent.com';
+
+            const ticket = await client.verifyIdToken({
+                idToken,
+                audience: CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+
+            if (!payload) {
+                logger.error('Google Login failed: No payload returned from verification');
+                return {
+                    success: false,
+                    message: 'Invalid Google Token',
+                };
+            }
+
+            const { email, name, picture } = payload;
+
+            if (!email) {
+                return {
+                    success: false,
+                    message: 'Email not found in Google Token',
+                };
+            }
+
+            logger.info(`Google Login attempt for email: ${email}`);
+
+            let user = await prisma.user.findUnique({
+                where: { email },
+            });
+
+            if (!user) {
+                logger.info(`Creating new user from Google Login: ${email}`);
+                user = await prisma.user.create({
+                    data: {
+                        email,
+                        name: name || 'Google User',
+                        avatarUrl: picture,
+                        // @ts-ignore - Prisma client types might be stale due to EPERM during generation
+                        password: null, // Explicitly set to null for Google auth
+                        role: 'STUDENT',
+                    },
+                });
+            } else {
+                if (!user.avatarUrl && picture) {
+                    user = await prisma.user.update({
+                        where: { id: user.id },
+                        data: { avatarUrl: picture },
+                    });
+                }
+            }
+
+            const token = generateToken({
+                userId: user.id,
+                email: user.email,
+                role: user.role,
+            });
+
+            const userDto: UserDto = this.mapUserToDto(user);
+
+            return {
+                success: true,
+                message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
+                user: userDto,
+                token,
+            };
+        } catch (error) {
+            logger.error('Google Login error:', error);
+            return {
+                success: false,
+                message: `Google Login failed: ${(error as any).message || error}`,
+            };
+        }
+    }
+
+    /**
+     * Change password
+     */
+    async changePassword(userId: string, changePasswordDto: ChangePasswordDto): Promise<ApiResponse> {
+        const { oldPassword, newPassword } = changePasswordDto;
+
+        try {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+            });
+
+            if (!user) {
+                return { success: false, message: 'Người dùng không tồn tại' };
+            }
+
+            // Nếu user đã có password (manual user), yêu cầu oldPassword
+            if (user.password) {
+                if (!oldPassword) {
+                    return { success: false, message: 'Vui lòng nhập mật khẩu hiện tại' };
+                }
+
+                const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+                if (!isPasswordValid) {
+                    return { success: false, message: 'Mật khẩu hiện tại không chính xác' };
+                }
+            }
+
+            // Hash password mới
+            const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+            await prisma.user.update({
+                where: { id: userId },
+                data: { password: hashedPassword },
+            });
+
+            return { success: true, message: 'Đổi mật khẩu thành công' };
+        } catch (error) {
+            logger.error('Change password error:', error);
+            return { success: false, message: 'Đã xảy ra lỗi khi đổi mật khẩu' };
+        }
+    }
+
+    /**
      * Helper: Map User model to UserDto (exclude password)
      */
     private mapUserToDto(user: User): UserDto {
@@ -400,8 +529,9 @@ export class AuthService {
             dateOfBirth: user.dateOfBirth?.toISOString() || undefined,
             gender: user.gender || undefined,
             avatarUrl: user.avatarUrl || undefined,
-            cefrLevel: user.cefrLevel || undefined,
             targetScore: user.targetScore || undefined,
+            progress: user.progress || 0,
+            hasPassword: !!user.password,
             createdAt: user.createdAt.toISOString(),
             // Default values for now (will be updated when we add test results)
             totalTestsTaken: 0,

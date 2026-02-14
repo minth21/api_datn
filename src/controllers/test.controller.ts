@@ -46,10 +46,12 @@ export const getTests = async (
             where,
             include: {
                 parts: {
+                    where: status === 'UNLOCKED' ? { status: 'ACTIVE' } : undefined,
                     select: {
                         id: true,
                         partNumber: true,
                         totalQuestions: true,
+                        timeLimit: true,
                         _count: {
                             select: {
                                 questions: true,
@@ -115,6 +117,7 @@ export const getTestById = async (
             where: { id },
             include: {
                 parts: {
+                    where: req.query.status === 'UNLOCKED' ? { status: 'ACTIVE' } : undefined,
                     include: {
                         _count: {
                             select: {

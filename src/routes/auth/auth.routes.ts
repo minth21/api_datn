@@ -57,6 +57,23 @@ router.post(
 );
 
 
+
+/**
+ * @route   POST /api/auth/google
+ * @desc    Đăng nhập bằng Google
+ * @access  Public
+ */
+router.post(
+    '/google',
+    [
+        body('idToken')
+            .notEmpty()
+            .withMessage('Google ID Token là bắt buộc'),
+        validateRequest,
+    ],
+    authController.googleLogin.bind(authController)
+);
+
 /**
  * @route   GET /api/auth/me
  * @desc    Lấy thông tin user hiện tại
@@ -132,6 +149,25 @@ router.post(
         validateRequest,
     ],
     authController.resetPassword.bind(authController)
+);
+
+/**
+ * @route   PATCH /api/auth/change-password
+ * @desc    Đổi mật khẩu (cần token)
+ * @access  Private
+ */
+router.patch(
+    '/change-password',
+    authMiddleware,
+    [
+        body('newPassword')
+            .notEmpty()
+            .withMessage('Mật khẩu mới không được để trống')
+            .isLength({ min: 8 })
+            .withMessage('Mật khẩu mới phải có ít nhất 8 ký tự'),
+        validateRequest,
+    ],
+    authController.changePassword.bind(authController)
 );
 
 export default router;

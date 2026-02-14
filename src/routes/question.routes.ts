@@ -11,6 +11,7 @@ import {
     createBatchQuestions,
     downloadTemplate,
 } from '../controllers/question.controller';
+import { generateBatchExplanations } from '../controllers/batchAi.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = express.Router();
@@ -30,6 +31,9 @@ router.post('/parts/:partId/questions/batch', authMiddleware, createBatchQuestio
 
 // Import questions from Excel
 router.post('/parts/:partId/questions/import', authMiddleware, upload.single('file'), importQuestions);
+
+// Generate AI explanations for multiple questions
+router.post('/parts/:partId/questions/generate-explanations', authMiddleware, generateBatchExplanations);
 
 // Update question
 router.patch('/questions/:id', authMiddleware, updateQuestion);

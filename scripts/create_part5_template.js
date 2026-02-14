@@ -6,12 +6,11 @@ function createPart5Template() {
     const headers = [
         'Số câu',
         'Nội dung câu hỏi',
-        'Đáp án A',
-        'Đáp án B',
-        'Đáp án C',
-        'Đáp án D',
-        'Đáp án đúng (A/B/C/D)',
-        'Giải thích'
+        'A',
+        'B',
+        'C',
+        'D',
+        'Đáp án đúng'
     ];
 
     // Create 30 empty rows for Part 5 questions (101-130)
@@ -24,8 +23,7 @@ function createPart5Template() {
             '', // Option B
             '', // Option C
             '', // Option D
-            '', // Correct answer
-            ''  // Explanation
+            '' // Correct answer
         ]);
     }
 

@@ -6,17 +6,16 @@ const wb = XLSX.utils.book_new();
 // Part 5 Template Data (1 example question for admin reference)
 const part5Data = [
     // Header row
-    ['questionText', 'optionA', 'optionB', 'optionC', 'optionD', 'correctAnswer', 'explanation'],
+    ['questionText', 'optionA', 'optionB', 'optionC', 'optionD', 'correctAnswer'],
 
-    // Example: Word form - Simple explanation format
+    // Example: Word form
     [
         'The company\'s new policy has been ___ implemented across all departments.',
         'success',
         'successful',
         'successfully',
         'succeed',
-        'C',
-        'Đáp án đúng là C. Cần dùng trạng từ "successfully" để bổ nghĩa cho động từ "implemented".'
+        'C'
     ]
 ];
 
@@ -30,8 +29,7 @@ ws['!cols'] = [
     { wch: 20 }, // optionB
     { wch: 20 }, // optionC
     { wch: 20 }, // optionD
-    { wch: 15 }, // correctAnswer
-    { wch: 50 }  // explanation
+    { wch: 15 }  // correctAnswer
 ];
 
 // Add worksheet to workbook

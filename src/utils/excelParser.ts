@@ -8,7 +8,7 @@ export interface Part5QuestionData {
     optionC: string;
     optionD: string;
     correctAnswer: 'A' | 'B' | 'C' | 'D';
-    explanation: string;
+    // No explanation - AI will generate after import
 }
 
 export interface Part6QuestionData {
@@ -52,13 +52,11 @@ export class ExcelParser {
                 // Flexible column mapping
                 const qNumber = row['Số câu'] || row['Số thứ tự'];
                 const qText = row.questionText || row['Nội dung câu hỏi'];
-                const optA = row.optionA || row['Đáp án A'];
-                const optB = row.optionB || row['Đáp án B'];
-                const optC = row.optionC || row['Đáp án C'];
-                const optD = row.optionD || row['Đáp án D'];
-                const correct = row.correctAnswer || row['Đáp án đúng (A/B/C/D)'];
-                const explain = row.explanation || row['Giải thích'];
-
+                const optA = row.optionA || row['A'];
+                const optB = row.optionB || row['B'];
+                const optC = row.optionC || row['C'];
+                const optD = row.optionD || row['D'];
+                const correct = row.correctAnswer || row['Đáp án đúng'];
                 // Skip empty rows
                 if (!qText || qText.trim() === '') {
                     continue;
@@ -72,21 +70,14 @@ export class ExcelParser {
                 if (!correct || !['A', 'B', 'C', 'D'].includes(correct.toUpperCase())) {
                     throw new Error(`Row ${i + 2}: Invalid correctAnswer (must be A, B, C, or D)`);
                 }
-
-                // Validate explanation is provided
-                if (!explain || explain.trim() === '') {
-                    throw new Error(`Row ${i + 2}: Missing explanation (Giải thích)`);
-                }
-
                 questions.push({
-                    questionNumber: qNumber ? parseInt(qNumber) : (101 + i), // Prefer explicitly set number, else fallback
+                    questionNumber: qNumber ? parseInt(qNumber) : (101 + i),
                     questionText: qText.trim(),
                     optionA: optA.trim(),
                     optionB: optB.trim(),
                     optionC: optC.trim(),
                     optionD: optD.trim(),
-                    correctAnswer: correct.toUpperCase() as 'A' | 'B' | 'C' | 'D',
-                    explanation: explain.trim()
+                    correctAnswer: correct.toUpperCase() as 'A' | 'B' | 'C' | 'D'
                 });
             }
 

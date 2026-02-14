@@ -332,12 +332,12 @@ export const createBatchQuestions = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
-        const { passage, questions, audioUrl, transcript } = req.body; // questions is array of { questionText, options..., correctAnswer, explanation }
+        const { passage, questions, audioUrl, transcript, mode } = req.body; // mode: 'append' | 'replace'
 
-        if (!passage || !Array.isArray(questions) || questions.length === 0) {
+        if (!Array.isArray(questions) || questions.length === 0) {
             res.status(400).json({
                 success: false,
-                message: 'Thiếu thông tin đoạn văn hoặc danh sách câu hỏi',
+                message: 'Danh sách câu hỏi không được để trống',
             });
             return;
         }
@@ -355,14 +355,66 @@ export const createBatchQuestions = async (
             return;
         }
 
+        // Validate passage requirement based on Part number
+        if ((part.partNumber === 6 || part.partNumber === 7) && !passage) {
+            res.status(400).json({
+                success: false,
+                message: 'Đoạn văn là bắt buộc đối với Part 6 và 7',
+            });
+            return;
+        }
+
+        // Handle replace mode for Part 5: delete all existing questions first
+        if (mode === 'replace' && part.partNumber === 5) {
+            await prisma.question.deleteMany({
+                where: { partId },
+            });
+        }
+
+        // For append mode, check if adding would exceed limit
+        if (mode === 'append' && part.partNumber === 5) {
+            const existingCount = await prisma.question.count({
+                where: { partId },
+            });
+            const totalAfterImport = existingCount + questions.length;
+            if (totalAfterImport > 30) {
+                res.status(400).json({
+                    success: false,
+                    message: `Không thể import. Tổng số câu sẽ vượt quá 30 (${existingCount} + ${questions.length} = ${totalAfterImport})`,
+                });
+                return;
+            }
+        }
+
         // Get last question number
         const lastQuestion = await prisma.question.findFirst({
             where: { partId },
             orderBy: { questionNumber: 'desc' },
         });
 
-        // For Part 6, start from 131 if no questions exist
-        let startQuestionNumber = lastQuestion ? lastQuestion.questionNumber + 1 : (part.partNumber === 6 ? 131 : 1);
+        // For Part 6/7, use standard logic. For Part 5, check start number
+        let startQuestionNumber = lastQuestion ? lastQuestion.questionNumber + 1 : (part.partNumber === 6 ? 131 : part.partNumber === 5 ? 101 : 1);
+
+        // Check for duplicate question numbers in existing questions
+        const existingQuestions = await prisma.question.findMany({
+            where: { partId },
+            select: { questionNumber: true }
+        });
+        const existingNumbers = new Set(existingQuestions.map(q => q.questionNumber));
+
+        // Check for duplicates in incoming questions
+        const incomingNumbers = questions.map((q: any, index: number) =>
+            q.questionNumber ? q.questionNumber : (startQuestionNumber + index)
+        );
+
+        const duplicates = incomingNumbers.filter(num => existingNumbers.has(num));
+        if (duplicates.length > 0) {
+            res.status(400).json({
+                success: false,
+                message: `Các câu sau đã tồn tại: ${duplicates.join(', ')}. Vui lòng kiểm tra lại.`,
+            });
+            return;
+        }
 
         // Prepare data
         const questionsToInsert = questions.map((q: any, index: number) => {
@@ -419,7 +471,8 @@ export const createBatchQuestions = async (
             }
         });
 
-        if (existingQuestionsInTest.length > 0) {
+        // Only check for duplicates if NOT in replace mode
+        if (mode !== 'replace' && existingQuestionsInTest.length > 0) {
             const duplicateNumbers = existingQuestionsInTest.map(q => q.questionNumber).sort((a, b) => a - b);
             // Show where they exist
             const duplicatesInfo = existingQuestionsInTest.map(q => `${q.questionNumber} (Part ${q.part.partNumber})`).join(', ');

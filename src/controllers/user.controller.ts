@@ -60,12 +60,20 @@ export const uploadUserAvatar = async (
                 gender: true,
                 avatarUrl: true,
                 role: true,
-                cefrLevel: true,
+                progress: true,
                 targetScore: true,
                 createdAt: true,
                 updatedAt: true,
+                password: true,
             },
         });
+
+        // Map to UserDto
+        const userResponse = {
+            ...updatedUser,
+            hasPassword: !!updatedUser.password,
+        };
+        delete (userResponse as any).password;
 
         // Delete old avatar from Cloudinary if exists
         if (user?.avatarUrl) {
@@ -137,7 +145,7 @@ export const getUsers = async (
                 gender: true,
                 avatarUrl: true,
                 role: true,
-                cefrLevel: true,
+                progress: true,
                 targetScore: true,
                 createdAt: true,
                 updatedAt: true,
@@ -187,7 +195,7 @@ export const getUserById = async (
                 gender: true,
                 avatarUrl: true,
                 role: true,
-                cefrLevel: true,
+                progress: true,
                 targetScore: true,
                 createdAt: true,
                 updatedAt: true,
@@ -211,6 +219,70 @@ export const getUserById = async (
     }
 };
 
+
+/**
+ * Update current user profile
+ * PATCH /api/users/me
+ */
+export const updateProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+        const { name, phoneNumber, dateOfBirth, gender, targetScore } = req.body;
+
+        if (!userId) {
+            res.status(401).json({
+                success: false,
+                message: 'Unauthorized',
+            });
+            return;
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: {
+                name,
+                phoneNumber,
+                dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+                gender,
+                targetScore: targetScore ? parseInt(targetScore.toString()) : undefined,
+            },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                phoneNumber: true,
+                dateOfBirth: true,
+                gender: true,
+                avatarUrl: true,
+                role: true,
+                progress: true,
+                targetScore: true,
+                createdAt: true,
+                updatedAt: true,
+                password: true,
+            },
+        });
+
+        const userResponse = {
+            ...updatedUser,
+            hasPassword: !!updatedUser.password,
+        };
+        delete (userResponse as any).password;
+
+        res.status(200).json({
+            success: true,
+            message: 'Cập nhật thông tin thành công',
+            user: userResponse,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 /**
  * Update user by ID
  * PATCH /api/users/:id
@@ -222,7 +294,7 @@ export const updateUserById = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
-        const { name, email, phoneNumber, dateOfBirth, gender, avatarUrl, role, cefrLevel, targetScore } = req.body;
+        const { name, email, phoneNumber, dateOfBirth, gender, avatarUrl, role, targetScore } = req.body;
 
         const updatedUser = await prisma.user.update({
             where: { id },
@@ -234,7 +306,7 @@ export const updateUserById = async (
                 gender,
                 avatarUrl,
                 role,
-                cefrLevel: cefrLevel as any,
+                // cefrLevel removed
                 targetScore,
             },
             select: {
@@ -246,17 +318,24 @@ export const updateUserById = async (
                 gender: true,
                 avatarUrl: true,
                 role: true,
-                cefrLevel: true,
+                progress: true,
                 targetScore: true,
                 createdAt: true,
                 updatedAt: true,
+                password: true,
             },
         });
+
+        const userResponse = {
+            ...updatedUser,
+            hasPassword: !!updatedUser.password,
+        };
+        delete (userResponse as any).password;
 
         res.status(200).json({
             success: true,
             message: 'User updated successfully',
-            user: updatedUser,
+            user: userResponse,
         });
     } catch (error) {
         next(error);
@@ -267,61 +346,7 @@ export const updateUserById = async (
  * Update user's TOEIC level
  * PATCH /api/users/level
  */
-export const updateUserLevel = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        const { cefrLevel } = req.body;
-
-        if (!userId) {
-            res.status(401).json({
-                success: false,
-                message: 'Unauthorized',
-            });
-            return;
-        }
-
-        // Validate cefrLevel
-        const validLevels = ['A1', 'A2', 'B1', 'B2', 'C1'];
-        if (!cefrLevel || !validLevels.includes(cefrLevel)) {
-            res.status(400).json({
-                success: false,
-                message: 'CEFR level must be one of: A1, A2, B1, B2, C1',
-            });
-            return;
-        }
-
-        const updatedUser = await prisma.user.update({
-            where: { id: userId },
-            data: { cefrLevel: cefrLevel as any },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                phoneNumber: true,
-                dateOfBirth: true,
-                gender: true,
-                avatarUrl: true,
-                role: true,
-                cefrLevel: true,
-                targetScore: true,
-                createdAt: true,
-                updatedAt: true,
-            },
-        });
-
-        res.status(200).json({
-            success: true,
-            message: 'CEFR level updated successfully',
-            user: updatedUser,
-        });
-    } catch (error) {
-        next(error);
-    }
-};
+// updateUserLevel endpoint removed
 
 /**
  * Create new user (Admin only)
@@ -333,7 +358,7 @@ export const createUser = async (
     next: NextFunction
 ): Promise<void> => {
     try {
-        const { name, email, password, phoneNumber, dateOfBirth, gender, role, cefrLevel, targetScore } = req.body;
+        const { name, email, password, phoneNumber, dateOfBirth, gender, role, targetScore } = req.body;
 
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({
@@ -362,7 +387,7 @@ export const createUser = async (
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                 gender,
                 role: role || 'STUDENT', // Default to STUDENT if not provided
-                cefrLevel: cefrLevel as any,
+                // cefrLevel removed
                 targetScore: targetScore ? parseInt(targetScore) : null,
             },
             select: {
@@ -374,17 +399,24 @@ export const createUser = async (
                 gender: true,
                 avatarUrl: true,
                 role: true,
-                cefrLevel: true,
+                progress: true,
                 targetScore: true,
                 createdAt: true,
                 updatedAt: true,
+                password: true,
             },
         });
+
+        const userResponse = {
+            ...newUser,
+            hasPassword: !!newUser.password,
+        };
+        delete (userResponse as any).password;
 
         res.status(201).json({
             success: true,
             message: 'Tạo user thành công',
-            user: newUser,
+            user: userResponse,
         });
     } catch (error) {
         next(error);

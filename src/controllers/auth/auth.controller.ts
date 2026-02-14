@@ -1,8 +1,9 @@
+
 import { Request, Response } from 'express';
 import { authService } from '../../services/auth/auth.service';
 import { LoginDto } from '../../dto/auth/auth.dto';
 import { successResponse, errorResponse } from '../../utils/response';
-import { HTTP_STATUS, SUCCESS_MESSAGES } from '../../config/constants';
+import { HTTP_STATUS } from '../../config/constants';
 import { logger } from '../../utils/logger';
 
 /**
@@ -45,8 +46,7 @@ export class AuthController {
                 phoneNumber,
                 dateOfBirth,
                 gender,
-                role,
-                cefrLevel
+                role
             } = req.body;
 
             const result = await authService.register({
@@ -56,8 +56,7 @@ export class AuthController {
                 phoneNumber,
                 dateOfBirth,
                 gender,
-                role,
-                cefrLevel
+                role
             });
 
             if (!result.success) {
@@ -166,6 +165,54 @@ export class AuthController {
             res.status(HTTP_STATUS.OK).json(result);
         } catch (error) {
             logger.error('Reset password error:', error);
+            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+    /**
+     * Google Login entry
+     */
+    async googleLogin(req: Request, res: Response): Promise<void> {
+        try {
+            const { idToken } = req.body;
+
+            if (!idToken) {
+                errorResponse(res, 'Google ID Token là bắt buộc', HTTP_STATUS.BAD_REQUEST);
+                return;
+            }
+
+            const result = await authService.googleLogin(idToken);
+
+            if (!result.success) {
+                errorResponse(res, result.message || 'Google Login failed', HTTP_STATUS.UNAUTHORIZED);
+                return;
+            }
+
+            res.status(HTTP_STATUS.OK).json(result);
+        } catch (error) {
+            logger.error('Google Login error:', error);
+            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * PATCH /api/auth/change-password
+     * Đổi mật khẩu
+     */
+    async changePassword(req: Request, res: Response): Promise<void> {
+        try {
+            const userId = (req.user as any).id;
+            const changePasswordDto = req.body;
+
+            const result = await authService.changePassword(userId, changePasswordDto);
+
+            if (!result.success) {
+                res.status(HTTP_STATUS.BAD_REQUEST).json(result);
+                return;
+            }
+
+            res.status(HTTP_STATUS.OK).json(result);
+        } catch (error) {
+            logger.error('Change password error:', error);
             errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }

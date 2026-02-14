@@ -16,7 +16,7 @@ const startServer = async (): Promise<void> => {
 
         app.listen(port, () => {
             logger.info('='.repeat(50));
-            logger.info('🚀 TOEIC Practice Backend Server Started');
+            logger.info('🚀 TOEIC-TEST Backend Server Started');
             logger.info('='.repeat(50));
             logger.info(`📡 Server running on: http://localhost:${port}`);
             logger.info(`🔗 API Base URL: http://localhost:${port}/api`);

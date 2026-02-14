@@ -4,8 +4,8 @@ import {
     getUsers,
     getUserById,
     updateUserById,
-    updateUserLevel,
     createUser,
+    updateProfile,
 } from '../controllers/user.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 import { adminMiddleware } from '../middlewares/admin.middleware';
@@ -20,6 +20,12 @@ const router = express.Router();
 router.post('/avatar', authMiddleware, uploadAvatar.single('avatar'), uploadUserAvatar);
 
 /**
+ * PATCH /api/users/me - Update current user profile
+ * Protected route - requires authentication (Any Role)
+ */
+router.patch('/me', authMiddleware, updateProfile);
+
+/**
  * POST /api/users - Create new user (Admin only)
  * Admin only
  */
@@ -31,12 +37,7 @@ router.post('/', authMiddleware, adminMiddleware, createUser);
  */
 router.get('/', authMiddleware, adminMiddleware, getUsers);
 
-/**
- * PATCH /api/users/level - Update user's TOEIC level
- * Protected route - requires authentication
- * NOTE: This must come BEFORE /:id route to avoid matching conflicts
- */
-router.patch('/level', authMiddleware, updateUserLevel);
+
 
 /**
  * GET /api/users/:id - Lấy thông tin chi tiết 1 user

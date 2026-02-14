@@ -1,4 +1,4 @@
-// Prisma Schema for TOEIC Practice Backend
+// Prisma Schema for TOEIC-TEST Backend
 // Database: PostgreSQL
 // ORM: Prisma
 
@@ -18,7 +18,7 @@ datasource db {
 model User {
   id          String    @id @default(uuid())
   email       String    @unique
-  password    String    // Hashed with bcrypt
+  password    String?   // Hashed with bcrypt (Optional for Google Auth)
   name        String
   phoneNumber String?
   dateOfBirth DateTime?
@@ -26,18 +26,44 @@ model User {
   avatarUrl   String?
   role        Role      @default(STUDENT)
   
-  // TOEIC Level (CEFR framework)
-  cefrLevel   CEFRLevel? // A1, A2, B1, B2, C1 (nullable)
+  progress    Int       @default(0)
   targetScore Int?       // Optional target score (e.g., 750)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   passwordResetTokens PasswordResetToken[]
+  partProgress        UserPartProgress[]
 
   @@index([email])
   @@index([createdAt])
   @@map("users")
+}
+
+// ... existing enums ...
+
+// ============================================
+// PROGRESS TRACKING MODEL
+// ============================================
+
+model UserPartProgress {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partId            String
+  part              Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  
+  attemptNumber     Int      // 1, 2, 3...
+  score             Int      // Raw score (e.g., 25/30)
+  totalQuestions    Int
+  percentage        Float    // Mathematical % (score/total)
+  aiAssessment      String?  @db.Text // Text feedback from AI
+  aiProgressScore   Float?   // 0-100 score evaluated by AI considering difficulty/history
+  
+  createdAt         DateTime @default(now())
+
+  @@unique([userId, partId, attemptNumber]) // Prevent duplicate attempt numbers
+  @@map("user_part_progress")
 }
 
 // ============================================
@@ -56,13 +82,6 @@ enum Gender {
   OTHER
 }
 
-enum CEFRLevel {
-  A1  // Beginner (120-220)
-  A2  // Elementary (225-545)
-  B1  // Intermediate (550-780)
-  B2  // Upper Intermediate (785-940)
-  C1  // Advanced (945-990)
-}
 
 // ============================================
 // PASSWORD RESET TOKEN MODEL
@@ -90,7 +109,7 @@ model PasswordResetToken {
 
 model Test {
   id              String     @id @default(uuid())
-  title           String     // "TOEIC Practice Test 1"
+  title           String     // "TOEIC-TEST Test 1"
   testType        TestType   // LISTENING or READING
   difficulty      Difficulty
   status          TestStatus @default(LOCKED)
@@ -118,10 +137,11 @@ model Part {
   audioUrl        String?    // URL audio cho Part (Listening only)
   audioDuration   Int?       // Thời lượng audio (giây)
   totalQuestions  Int        // Số câu hỏi trong Part
-  timeLimit       Int?       // Thời gian làm bài (phút)
+  timeLimit       Int?       // Thời gian làm bài (seconds)
   questions       Question[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
+  userProgress    UserPartProgress[]
 
   @@unique([testId, partNumber])
   @@index([testId])

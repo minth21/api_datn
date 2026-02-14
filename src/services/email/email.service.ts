@@ -15,9 +15,9 @@ export class EmailService {
     ): Promise<boolean> {
         try {
             const mailOptions = {
-                from: `${process.env.SMTP_FROM_NAME || 'TOEIC Practice App'} <${process.env.SMTP_FROM_EMAIL}>`,
+                from: `${process.env.SMTP_FROM_NAME || 'TOEIC-TEST App'} <${process.env.SMTP_FROM_EMAIL}>`,
                 to: email,
-                subject: 'Mã xác thực đặt lại mật khẩu - TOEIC Practice App',
+                subject: 'Mã xác thực đặt lại mật khẩu - TOEIC-TEST App',
                 html: this.getPasswordResetEmailTemplate(userName, otpCode),
             };
 
@@ -131,7 +131,7 @@ export class EmailService {
         </div>
         <div class="content">
             <p>Xin chào <strong>${userName}</strong>,</p>
-            <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản TOEIC Practice App của bạn.</p>
+            <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản TOEIC-TEST App của bạn.</p>
             
             <div class="otp-box">
                 <div class="otp-label">Mã xác thực của bạn</div>
@@ -145,7 +145,7 @@ export class EmailService {
             <div class="instructions">
                 <p><strong>Hướng dẫn đặt lại mật khẩu:</strong></p>
                 <ol>
-                    <li>Mở ứng dụng TOEIC Practice App</li>
+                    <li>Mở ứng dụng TOEIC-TEST App</li>
                     <li>Nhập mã xác thực <strong>${otpCode}</strong> vào màn hình đặt lại mật khẩu</li>
                     <li>Tạo mật khẩu mới của bạn</li>
                     <li>Hoàn tất và đăng nhập với mật khẩu mới</li>
@@ -158,7 +158,7 @@ export class EmailService {
         </div>
         <div class="footer">
             <p>Email này được gửi tự động, vui lòng không trả lời.</p>
-            <p>&copy; 2024 TOEIC Practice App. All rights reserved.</p>
+            <p>&copy; 2024 TOEIC-TEST App. All rights reserved.</p>
         </div>
     </div>
 </body>

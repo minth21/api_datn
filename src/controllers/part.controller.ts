@@ -14,9 +14,15 @@ export const getPartsByTestId = async (
 ): Promise<void> => {
     try {
         const { testId } = req.params;
+        const status = req.query.status as string;
+
+        const where: any = { testId };
+        if (status && status !== 'ALL') {
+            where.status = status;
+        }
 
         const parts = await prisma.part.findMany({
-            where: { testId },
+            where,
             include: {
                 _count: {
                     select: {

@@ -1,4 +1,4 @@
-# 🎓 TOEIC Practice Backend API
+# 🎓 TOEIC-TEST Backend API
 
 Backend API cho ứng dụng luyện thi TOEIC, được xây dựng bằng **Express.js + TypeScript**.
 
@@ -178,7 +178,7 @@ Health check endpoint
 ```json
 {
   "success": true,
-  "message": "TOEIC Practice API is running",
+  "message": "TOEIC-TEST API is running",
   "timestamp": "2025-12-12T08:00:00.000Z"
 }
 ```
