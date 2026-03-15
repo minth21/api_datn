@@ -14,7 +14,8 @@ export const getDashboardStats = async (
 ): Promise<void> => {
     try {
         const [userCount, testCount, questionCount] = await Promise.all([
-            prisma.user.count(),
+            // Chỉ đếm người dùng có role là STUDENT - loại trừ ban quản trị
+            prisma.user.count({ where: { role: 'STUDENT' } }),
             prisma.test.count(),
             prisma.question.count(),
         ]);
@@ -22,7 +23,7 @@ export const getDashboardStats = async (
         res.status(200).json({
             success: true,
             data: {
-                users: userCount,
+                users: userCount,        // Số học viên (STUDENT only)
                 tests: testCount,
                 questions: questionCount,
             },

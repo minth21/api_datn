@@ -7,6 +7,7 @@ import questionRoutes from './question.routes';
 import uploadRoutes from './upload.routes';
 import aiRoutes from './ai.routes';
 import dashboardRoutes from './dashboard.routes';
+import studentDashboardRoutes from './student-dashboard.routes';
 import practiceRoutes from './practice.routes';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.use('/', questionRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/ai', aiRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/dashboard', studentDashboardRoutes);
 router.use('/practice', practiceRoutes);
 
 // Health check endpoint

@@ -52,6 +52,9 @@ export const getTests = async (
                         partNumber: true,
                         totalQuestions: true,
                         timeLimit: true,
+                        instructions: true, // Added
+                        instructionImgUrl: true, // Added
+                        audioUrl: true, // Added
                         _count: {
                             select: {
                                 questions: true,
@@ -112,6 +115,7 @@ export const getTestById = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
+        const userId = (req as any).user?.id; // Get authenticated user ID
 
         const test = await prisma.test.findUnique({
             where: { id },
@@ -140,9 +144,50 @@ export const getTestById = async (
             return;
         }
 
+        // Fetch User Progress if user is logged in
+        let partsWithProgress = test.parts.map(part => ({
+            ...part,
+            userProgress: 0 // Default 0
+        }));
+
+        if (userId) {
+            const partIds = test.parts.map(p => p.id);
+            const progresses = await prisma.userPartProgress.findMany({
+                where: {
+                    userId,
+                    partId: { in: partIds }
+                },
+                orderBy: {
+                    createdAt: 'desc' // Latest first
+                }
+            });
+
+            // Map progress to parts
+            partsWithProgress = test.parts.map(part => {
+                // Find latest attempt for this part (first one in list)
+                const latestAttempt = progresses.find(p => p.partId === part.id);
+
+                let currentProgress = 0;
+
+                if (latestAttempt) {
+                    // Use AI Progress Score if available, otherwise raw percentage
+                    currentProgress = latestAttempt.aiProgressScore ?? latestAttempt.percentage ?? 0;
+                }
+
+                return {
+                    ...part,
+                    // Use latest progress
+                    userProgress: Math.round(currentProgress)
+                };
+            });
+        }
+
         res.status(200).json({
             success: true,
-            test,
+            test: {
+                ...test,
+                parts: partsWithProgress
+            },
         });
     } catch (error) {
         next(error);
@@ -160,6 +205,7 @@ export const createTest = async (
 ): Promise<void> => {
     try {
         const { title, testType, difficulty, status, duration, totalQuestions } = req.body;
+        const authorId = (req as any).user?.id;
 
         const newTest = await prisma.test.create({
             data: {
@@ -169,6 +215,7 @@ export const createTest = async (
                 status: status || 'LOCKED',
                 duration: parseInt(duration),
                 totalQuestions: parseInt(totalQuestions),
+                authorId,
             } as any,
         });
 
@@ -201,19 +248,35 @@ export const updateTest = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
+        console.log('Update Test Request - ID:', id);
+        console.log('Update Test Request - Body:', req.body);
+
         const { title, testType, difficulty, status, duration, totalQuestions } = req.body;
+
+        const updateData: any = {};
+        if (title !== undefined) updateData.title = title;
+        if (testType !== undefined) updateData.testType = testType;
+        if (difficulty !== undefined) updateData.difficulty = difficulty;
+        if (status !== undefined) updateData.status = status;
+        
+        if (duration !== undefined) {
+            const parsed = parseInt(duration);
+            if (!isNaN(parsed)) updateData.duration = parsed;
+        }
+        
+        if (totalQuestions !== undefined) {
+            const parsed = parseInt(totalQuestions);
+            if (!isNaN(parsed)) updateData.totalQuestions = parsed;
+        }
+
+        console.log('Final Update Data for Prisma:', updateData);
 
         const updatedTest = await prisma.test.update({
             where: { id },
-            data: {
-                title,
-                testType,
-                difficulty,
-                status,
-                duration: duration ? parseInt(duration) : undefined,
-                totalQuestions: totalQuestions ? parseInt(totalQuestions) : undefined,
-            } as any,
+            data: updateData,
         });
+
+        console.log('Prisma Update Result:', updatedTest);
 
         // Calculate listening/reading for response
         const listeningQuestions = (updatedTest as any).testType === 'LISTENING' ? (updatedTest as any).totalQuestions : 0;
@@ -228,8 +291,13 @@ export const updateTest = async (
                 readingQuestions,
             },
         });
-    } catch (error) {
-        next(error);
+    } catch (error: any) {
+        console.error('Update Test Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error updating test',
+            error: error
+        });
     }
 };
 

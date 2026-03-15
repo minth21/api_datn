@@ -28,12 +28,22 @@ model User {
   
   progress    Int       @default(0)
   targetScore Int?       // Optional target score (e.g., 750)
+  estimatedScore     Int?   // Predicted total score
+  estimatedListening Int?   // Predicted listening score
+  estimatedReading   Int?   // Predicted reading score
+  
+  currentStreak      Int       @default(0)
+  lastActiveAt       DateTime?
+  
+  authProvider String   @default("LOCAL") // "LOCAL" or "GOOGLE"
+  googleId     String?  @unique
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   passwordResetTokens PasswordResetToken[]
   partProgress        UserPartProgress[]
+  exams               Test[]                @relation("ExamAuthor")
 
   @@index([email])
   @@index([createdAt])
@@ -57,8 +67,10 @@ model UserPartProgress {
   score             Int      // Raw score (e.g., 25/30)
   totalQuestions    Int
   percentage        Float    // Mathematical % (score/total)
+  userAnswers       String?  @db.Text // JSON string of user answers { "0": "A", "1": "C" }
   aiAssessment      String?  @db.Text // Text feedback from AI
   aiProgressScore   Float?   // 0-100 score evaluated by AI considering difficulty/history
+  toeicScore        Int?     // Converted TOEIC score (0-495) using reading/listening scale
   
   createdAt         DateTime @default(now())
 
@@ -72,7 +84,8 @@ model UserPartProgress {
 
 enum Role {
   STUDENT
-  STAFF
+  REVIEWER
+  SPECIALIST
   ADMIN
 }
 
@@ -115,6 +128,10 @@ model Test {
   status          TestStatus @default(LOCKED)
   duration        Int        // Thời gian (phút)
   totalQuestions  Int        // Tổng số câu hỏi
+  
+  authorId        String?
+  author          User?      @relation("ExamAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
   parts           Part[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
@@ -149,28 +166,38 @@ model Part {
 }
 
 model Question {
-  id              String   @id @default(uuid())
-  partId          String
-  part            Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
-  questionNumber  Int      // Số thứ tự trong Part (1, 2, 3...)
-  passage         String?  @db.Text // Đoạn văn (Part 6 only - shared by 4 questions)
-  questionText    String?  @db.Text // Nội dung câu hỏi (null cho Part 1)
-  imageUrl        String?  // Hình ảnh (Part 1, 7)
-  optionA         String?  // Đáp án A
-  optionB         String?  // Đáp án B
-  optionC         String?  // Đáp án C
-  optionD         String?  // Đáp án D
-  correctAnswer   String   // "A", "B", "C", "D"
-  explanation     String?  @db.Text // Giải thích đáp án
-  audioUrl        String?  // Audio URL (Parts 1, 2, 3, 4)
-  transcript      String?  // Transcript for audio
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(uuid())
+  partId            String
+  part              Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  questionNumber    Int      // Số thứ tự trong Part (1, 2, 3...)
+  passage           String?  @db.Text // Đoạn văn text (Part 6/7 - shared by question group)
+  passageImageUrl   String?  @db.Text // CSV of passage image URLs (Part 6/7, hiện ở App)
+  passageTranslationData String? @db.Text // JSON stringified array of {en, vi} sentences cho Part 6 Touch-to-Translate
+  questionScanUrl   String?  @db.Text // CSV of question scan image URLs (Part 6/7, chỉ dùng để quét AI)
+  questionText      String?  @db.Text // Nội dung câu hỏi (null cho Part 1)
+  imageUrl          String?  // Hình ảnh thực của câu hỏi (Part 1, 2, 3)
+  optionA           String?  // Đáp án A
+  optionB           String?  // Đáp án B
+  optionC           String?  // Đáp án C
+  optionD           String?  // Đáp án D
+  correctAnswer     String   // "A", "B", "C", "D"
+  explanation       String?  @db.Text // Giải thích đáp án
+  audioUrl          String?  // Audio URL (Parts 1, 2, 3, 4)
+  transcript        String?  // Transcript for audio
+  topic_tag         String?  // Chủ điểm ngữ pháp/từ vựng (e.g., "Thì hiện tại", "Từ loại")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([partId, questionNumber])
   @@index([partId])
   @@map("questions")
 }
+
+// ============================================
+// BACKGROUND JOB MODELS
+// ============================================
+
+
 
 // ============================================
 // EXAM BANK ENUMS

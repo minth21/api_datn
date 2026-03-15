@@ -20,13 +20,17 @@ export interface UserDto {
     id: string;
     email: string;
     name: string;
-    role: string; // STUDENT or ADMIN
+    role: string; // STUDENT, REVIEWER, SPECIALIST, ADMIN
+    authProvider: string; // "LOCAL" or "GOOGLE"
     phoneNumber?: string;
     dateOfBirth?: string; // ISO 8601 date string
     gender?: string; // MALE, FEMALE, OTHER
     avatarUrl?: string;
     progress?: number; // 0-100
     targetScore?: number; // Optional target score
+    estimatedScore?: number;
+    estimatedListening?: number;
+    estimatedReading?: number;
     hasPassword: boolean;
     createdAt: string; // ISO 8601 date string
     totalTestsTaken: number;

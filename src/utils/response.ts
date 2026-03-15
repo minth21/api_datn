@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { HTTP_STATUS } from '../config/constants';
-import { ApiResponse } from '../dto/auth.dto';
+import { ApiResponse } from '../dto/auth/auth.dto';
 
 /**
  * Chuẩn hóa response thành công
@@ -24,12 +24,12 @@ export const successResponse = <T>(
  */
 export const errorResponse = (
     res: Response,
-    error: string,
+    message: string,
     statusCode: number = HTTP_STATUS.BAD_REQUEST
 ): Response => {
     const response: ApiResponse = {
         success: false,
-        error,
+        message,
     };
     return res.status(statusCode).json(response);
 };

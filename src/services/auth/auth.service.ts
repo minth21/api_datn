@@ -43,7 +43,24 @@ export class AuthService {
                 };
             }
 
-            // Verify password
+            // Verify password and Auth Provider
+            if (user.authProvider === 'GOOGLE') {
+                logger.warn(`Login failed: Account linked to Google - ${email}`);
+                return {
+                    success: false,
+                    message: 'Tài khoản này được liên kết với Google. Vui lòng sử dụng tính năng Đăng nhập bằng Google.',
+                };
+            }
+
+            // Handle Local accounts that might not have a password (legacy data)
+            if (!user.password) {
+                logger.warn(`Login failed: Account has no password - ${email}`);
+                return {
+                    success: false,
+                    message: ERROR_MESSAGES.INVALID_CREDENTIALS,
+                };
+            }
+
             const isPasswordValid = await bcrypt.compare(password, user.password);
 
             if (!isPasswordValid) {
@@ -437,8 +454,8 @@ export class AuthService {
                         email,
                         name: name || 'Google User',
                         avatarUrl: picture,
-                        // @ts-ignore - Prisma client types might be stale due to EPERM during generation
-                        password: null, // Explicitly set to null for Google auth
+                        password: null, // Explicitly null for Google auth
+                        authProvider: 'GOOGLE',
                         role: 'STUDENT',
                     },
                 });
@@ -525,11 +542,15 @@ export class AuthService {
             email: user.email,
             name: user.name,
             role: user.role,
+            authProvider: user.authProvider,
             phoneNumber: user.phoneNumber || undefined,
             dateOfBirth: user.dateOfBirth?.toISOString() || undefined,
             gender: user.gender || undefined,
             avatarUrl: user.avatarUrl || undefined,
             targetScore: user.targetScore || undefined,
+            estimatedScore: (user as any).estimatedScore || undefined,
+            estimatedListening: (user as any).estimatedListening || undefined,
+            estimatedReading: (user as any).estimatedReading || undefined,
             progress: user.progress || 0,
             hasPassword: !!user.password,
             createdAt: user.createdAt.toISOString(),

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import * as path from 'path';
 import * as fs from 'fs';
+import { validateAndStandardizePassageData } from '../utils/passageValidator';
 
 const prisma = new PrismaClient();
 
@@ -160,11 +161,20 @@ export const updateQuestion = async (
             optionD,
             correctAnswer,
             explanation,
-            passage, // Add passage to update
+            passage,
             audioUrl,
-            imageUrl, // Add imageUrl
-            transcript
+            imageUrl,
+            transcript,
+            passageImageUrl, // ✅ New: dedicated passage image URLs
+            questionScanUrl, // ✅ New: dedicated question scan URLs
+            passageTranslationData,
         } = req.body;
+
+        // Validate and Standardize
+        let sanitizedData: string | null = null;
+        if (passageTranslationData) {
+            sanitizedData = validateAndStandardizePassageData(passageTranslationData);
+        }
 
         const updatedQuestion = await prisma.question.update({
             where: { id },
@@ -177,12 +187,39 @@ export const updateQuestion = async (
                 optionD,
                 correctAnswer,
                 explanation,
-                passage, // Add passage to update
+                passage,
                 audioUrl,
-                imageUrl, // Add imageUrl
-                transcript
+                imageUrl,
+                transcript,
+                passageImageUrl,
+                questionScanUrl,
+                passageTranslationData: sanitizedData,
             },
         });
+
+        // Tự động đồng bộ passageTranslationData cho các câu hỏi cùng passage (Tránh Redundancy / Inconsistent Data)
+        if (sanitizedData !== null) {
+            const currentQuestion = await prisma.question.findUnique({
+                where: { id },
+                include: { part: true }
+            });
+
+            // Chỉ áp dụng cho Part 6 và 7 nơi passage dùng chung
+            if (currentQuestion && (currentQuestion.part.partNumber === 6 || currentQuestion.part.partNumber === 7)) {
+                if (currentQuestion.passage) {
+                    await prisma.question.updateMany({
+                        where: {
+                            partId: currentQuestion.partId,
+                            passage: currentQuestion.passage,
+                            id: { not: id } // Không cần update lại câu hiện tại
+                        },
+                        data: {
+                            passageTranslationData: sanitizedData
+                        }
+                    });
+                }
+            }
+        }
 
         res.status(200).json({
             success: true,
@@ -319,8 +356,6 @@ export const bulkDeleteQuestions = async (
     }
 };
 
-
-
 /**
  * Create batch questions (Part 6)
  * POST /api/parts/:partId/questions/batch
@@ -332,7 +367,13 @@ export const createBatchQuestions = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
-        const { passage, questions, audioUrl, transcript, mode } = req.body; // mode: 'append' | 'replace'
+        const { passage, passageTranslationData, questions, audioUrl, transcript, mode } = req.body; // mode: 'append' | 'replace'
+
+        // Validate and Standardize
+        let sanitizedData: string | null = null;
+        if (passageTranslationData) {
+            sanitizedData = validateAndStandardizePassageData(passageTranslationData);
+        }
 
         if (!Array.isArray(questions) || questions.length === 0) {
             res.status(400).json({
@@ -420,6 +461,14 @@ export const createBatchQuestions = async (
         const questionsToInsert = questions.map((q: any, index: number) => {
             const qNum = q.questionNumber ? q.questionNumber : (startQuestionNumber + index);
 
+            // Basic validation
+            if (!q.correctAnswer) {
+                throw new Error(`Câu ${qNum} thiếu đáp án đúng.`);
+            }
+            if (!q.optionA || !q.optionB || !q.optionC || !q.optionD) {
+                throw new Error(`Câu ${qNum} thiếu một hoặc nhiều lựa chọn (A-D).`);
+            }
+
             // Validate Part 5 question number range
             if (part.partNumber === 5 && (qNum < 101 || qNum > 130)) {
                 throw new Error(`Part 5 chỉ chấp nhận câu hỏi từ 101-130. Câu ${qNum} không hợp lệ.`);
@@ -439,6 +488,9 @@ export const createBatchQuestions = async (
                 partId,
                 questionNumber: qNum,
                 passage: passage,
+                passageTranslationData: sanitizedData,
+                passageImageUrl: q.passageImageUrl || null,
+                questionScanUrl: q.questionScanUrl || null,
                 questionText: q.questionText,
                 optionA: q.optionA,
                 optionB: q.optionB,
@@ -448,6 +500,7 @@ export const createBatchQuestions = async (
                 explanation: q.explanation,
                 audioUrl: audioUrl || q.audioUrl,
                 transcript: transcript || q.transcript,
+                imageUrl: q.imageUrl || null,
             };
         });
 

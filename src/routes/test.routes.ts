@@ -7,6 +7,7 @@ import {
     deleteTest,
 } from '../controllers/test.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
+import { roleMiddleware } from '../middlewares/role.middleware';
 
 const router = express.Router();
 
@@ -20,12 +21,12 @@ router.get('/', getTests);
 router.get('/:id', getTestById);
 
 // POST /api/tests - Create new test
-router.post('/', createTest);
+router.post('/', roleMiddleware(['ADMIN', 'SPECIALIST', 'REVIEWER']), createTest);
 
 // PATCH /api/tests/:id - Update test
-router.patch('/:id', updateTest);
+router.patch('/:id', roleMiddleware(['ADMIN', 'SPECIALIST', 'REVIEWER']), updateTest);
 
 // DELETE /api/tests/:id - Delete test
-router.delete('/:id', deleteTest);
+router.delete('/:id', roleMiddleware(['ADMIN', 'SPECIALIST']), deleteTest);
 
 export default router;

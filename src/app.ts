@@ -1,7 +1,6 @@
 import express, { Application } from 'express';
 import cors from 'cors';
 import path from 'path';
-import { config } from './config/env';
 import { APP_CONSTANTS } from './config/constants';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
@@ -27,7 +26,7 @@ export const createApp = (): Application => {
     app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
     // Request logging
-    app.use((req, res, next) => {
+    app.use((req, _res, next) => {
         logger.info(`${req.method} ${req.path}`);
         next();
     });

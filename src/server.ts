@@ -14,7 +14,7 @@ const startServer = async (): Promise<void> => {
         const app = createApp();
         const port = config.port;
 
-        app.listen(port, () => {
+        const server = app.listen(port, () => {
             logger.info('='.repeat(50));
             logger.info('🚀 TOEIC-TEST Backend Server Started');
             logger.info('='.repeat(50));
@@ -30,6 +30,11 @@ const startServer = async (): Promise<void> => {
             logger.info('🎨 Prisma Studio: http://localhost:5555');
             logger.info('='.repeat(50));
         });
+
+        // Increase server timeout to 10 minutes for long-running AI tasks
+        server.timeout = 600000;
+        server.keepAliveTimeout = 610000; // slightly higher than server.timeout
+        server.headersTimeout = 620000;
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
