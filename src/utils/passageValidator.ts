@@ -39,12 +39,18 @@ export const validateAndStandardizePassageData = (data: any): string | null => {
     let aiQuestions: any[] = [];
     
     if (parsed && !Array.isArray(parsed)) {
-        if (Array.isArray(parsed.passages)) {
+        // Support both "passages" and "passageTranslations" keys
+        const rawPassages = parsed.passages || parsed.passageTranslations;
+        
+        if (Array.isArray(rawPassages)) {
             vocabulary = parsed.vocabulary || [];
             aiQuestions = parsed.questions || [];
-            parsed = parsed.passages;
+            parsed = rawPassages;
+        } else if (parsed.en || parsed.vi) {
+             // Handle single object case (Legacy)
+             parsed = [parsed];
         } else {
-            // Handle single object case
+            // Might be a single passage object without wrapper
             parsed = [parsed];
         }
     }
@@ -53,7 +59,7 @@ export const validateAndStandardizePassageData = (data: any): string | null => {
 
     // Auto-migration & Validation
     const standardized: any[] = parsed.map((block: any, index: number) => {
-        // Case 1: Legacy Part 6 format (Flat array of {en, vi})
+        // Case 1: Legacy format (Flat array of {en, vi})
         if (block.en || block.vi) {
             return {
                 type: 'passage',
@@ -92,13 +98,7 @@ export const validateAndStandardizePassageData = (data: any): string | null => {
 
     if (standardized.length === 0) return null;
 
-    // If we have extra metadata (vocabulary/questions), we might want to preserve it, 
-    // but the main UI expects an array for bilingual display.
-    // For now, let's keep it as an array to ensure UI compatibility, 
-    // OR wrap it back if we want to preserve AI insights.
-    
-    // To satisfy both PartDetail (wants array) and Modal (wants full object), 
-    // let's stick to the Array format if possible, or a hybrid.
+    // Preserve metadata if exists
     if (vocabulary.length > 0 || aiQuestions.length > 0) {
         return JSON.stringify({
             passages: standardized,

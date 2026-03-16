@@ -3,8 +3,8 @@ import pLimit from 'p-limit';
 import { jsonrepair } from 'jsonrepair'; // Robust JSON repair
 import { getNextGenerativeModel } from '../config/gemini.config';
 
-// 1. Chỉ cho phép gọi đồng thời TỐI ĐA 3 request sang Google
-const aiLimit = pLimit(3);
+// 1. Cho phép gọi đồng thời nhiều request hơn (Billing đã bật)
+const aiLimit = pLimit(10);
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // 2. Hàm Wrapper: Đưa request vào hàng đợi và tự động Retry khi gặp lỗi 429/503
@@ -690,8 +690,7 @@ OUTPUT JSON:
 };
 
 // 1.7 MAGIC SCAN Part 7 (Orchestrator - Multi-stage Pipeline)
-const limit = pLimit(2);
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+const limit = pLimit(5);
 
 export const magicScanPart7FromImagesService = async (
     images: { buffer: Buffer; mimeType: string }[]
@@ -720,10 +719,7 @@ export const magicScanPart7FromImagesService = async (
 
     const passagePromises = passageTargets.map((p, index) =>
         limit(async () => {
-            // Cứ mỗi đoạn xếp hàng, cho nó nghỉ để dàn đều request, tránh bị Google "đá" (429)
-            if (index > 0) {
-                await delay(index * 2500);
-            }
+            // Với Billing, không cần delay nhân tạo nữa
             console.log(`[AI]   Đang dịch đoạn văn: "${p.label}"...`);
             try {
                 const result = await extractPassageDetailService(images, p.label, index);
