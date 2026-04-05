@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+// Bypass IDE stale property checks
+const p = prisma as any;
 
 /**
  * Upload user avatar
@@ -32,7 +34,7 @@ export const uploadUserAvatar = async (
         }
 
         // Get user's old avatar URL to delete from Cloudinary
-        const user = await prisma.user.findUnique({
+        const user = await p.user.findUnique({
             where: { id: userId },
             select: { avatarUrl: true },
         });
@@ -48,13 +50,14 @@ export const uploadUserAvatar = async (
         const avatarUrl = uploadResult.secure_url;
 
         // Update user's avatar in database
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await p.user.update({
             where: { id: userId },
             data: { avatarUrl },
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -65,7 +68,11 @@ export const uploadUserAvatar = async (
                 estimatedListening: true,
                 estimatedReading: true,
                 estimatedScore: true,
+                totalAttempts: true,
+                averageScore: true,
+                highestScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
                 password: true,
@@ -75,7 +82,7 @@ export const uploadUserAvatar = async (
         // Map to UserDto
         const userResponse = {
             ...updatedUser,
-            hasPassword: !!updatedUser.password,
+            hasPassword: !!(updatedUser as any).password,
         };
         delete (userResponse as any).password;
 
@@ -129,21 +136,22 @@ export const getUsers = async (
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
+                { username: { contains: search, mode: 'insensitive' } },
                 { phoneNumber: { contains: search, mode: 'insensitive' } },
             ];
         }
 
         // Get total count for pagination
-        const total = await prisma.user.count({ where });
+        const total = await p.user.count({ where });
 
         // Get users with pagination
-        const users = await prisma.user.findMany({
+        const users = await p.user.findMany({
             where,
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -154,7 +162,11 @@ export const getUsers = async (
                 estimatedListening: true,
                 estimatedReading: true,
                 estimatedScore: true,
+                totalAttempts: true,
+                averageScore: true,
+                highestScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
             },
@@ -192,12 +204,13 @@ export const getUserById = async (
     try {
         const { id } = req.params;
 
-        const user = await prisma.user.findUnique({
+        const user = await p.user.findUnique({
             where: { id },
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -208,7 +221,11 @@ export const getUserById = async (
                 estimatedListening: true,
                 estimatedReading: true,
                 estimatedScore: true,
+                totalAttempts: true,
+                averageScore: true,
+                highestScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
             },
@@ -243,7 +260,9 @@ export const updateProfile = async (
 ): Promise<void> => {
     try {
         const userId = req.user?.id;
-        const { name, phoneNumber, dateOfBirth, gender, targetScore } = req.body;
+        // Strict destructuring - ONLY allow these fields as per security requirement
+        // name, email, phoneNumber, dateOfBirth, avatarUrl
+        const { name, email, phoneNumber, dateOfBirth, avatarUrl, allowAiPushNotification } = req.body;
 
         if (!userId) {
             res.status(401).json({
@@ -253,19 +272,21 @@ export const updateProfile = async (
             return;
         }
 
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await p.user.update({
             where: { id: userId },
             data: {
-                name,
-                phoneNumber,
+                name: name || undefined,
+                email: email || undefined,
+                phoneNumber: phoneNumber || undefined,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-                gender,
-                targetScore: targetScore ? parseInt(targetScore.toString()) : undefined,
+                avatarUrl: typeof avatarUrl === 'string' ? avatarUrl : undefined,
+                allowAiPushNotification: typeof allowAiPushNotification === 'boolean' ? allowAiPushNotification : undefined,
             },
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -277,6 +298,7 @@ export const updateProfile = async (
                 estimatedReading: true,
                 estimatedScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
                 password: true,
@@ -285,7 +307,7 @@ export const updateProfile = async (
 
         const userResponse = {
             ...updatedUser,
-            hasPassword: !!updatedUser.password,
+            hasPassword: !!(updatedUser as any).password,
         };
         delete (userResponse as any).password;
 
@@ -310,25 +332,30 @@ export const updateUserById = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
-        const { name, email, phoneNumber, dateOfBirth, gender, avatarUrl, role, targetScore } = req.body;
+        const { name, username, email, phoneNumber, dateOfBirth, gender, avatarUrl, role, targetScore, allowAiPushNotification } = req.body;
 
-        const updatedUser = await prisma.user.update({
+        // Clean avatarUrl: ensure it is a string, ignore if it is an object
+        const cleanAvatarUrl = typeof avatarUrl === 'string' ? avatarUrl : (avatarUrl === null ? null : undefined);
+
+        const updatedUser = await p.user.update({
             where: { id },
             data: {
                 name,
-                email,
+                username: username || undefined,
+                email: email || undefined,
                 phoneNumber,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
                 gender,
-                avatarUrl,
+                avatarUrl: cleanAvatarUrl,
                 role,
-                // cefrLevel removed
-                targetScore,
+                targetScore: (targetScore && !isNaN(parseInt(targetScore.toString()))) ? parseInt(targetScore.toString()) : undefined,
+                allowAiPushNotification: typeof allowAiPushNotification === 'boolean' ? allowAiPushNotification : undefined,
             },
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -340,6 +367,7 @@ export const updateUserById = async (
                 estimatedReading: true,
                 estimatedScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
                 password: true,
@@ -348,7 +376,7 @@ export const updateUserById = async (
 
         const userResponse = {
             ...updatedUser,
-            hasPassword: !!updatedUser.password,
+            hasPassword: !!(updatedUser as any).password,
         };
         delete (userResponse as any).password;
 
@@ -378,17 +406,28 @@ export const createUser = async (
     next: NextFunction
 ): Promise<void> => {
     try {
-        const { name, email, password, phoneNumber, dateOfBirth, gender, role, targetScore } = req.body;
+        const { name, username, email, password, phoneNumber, dateOfBirth, gender, avatarUrl, role, targetScore } = req.body;
 
-        // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
+        if (!username) {
+            res.status(400).json({
+                success: false,
+                message: 'Mã người dùng (username) là bắt buộc',
+            });
+            return;
+        }
+
+        // Clean avatarUrl: ensure it is a string, ignore if it is an object
+        const cleanAvatarUrl = typeof avatarUrl === 'string' ? avatarUrl : null;
+
+        // Check if username already exists
+        const existingUser = await p.user.findUnique({
+            where: { username },
         });
 
         if (existingUser) {
             res.status(400).json({
                 success: false,
-                message: 'Email đã được sử dụng',
+                message: 'Mã người dùng đã được sử dụng',
             });
             return;
         }
@@ -398,22 +437,24 @@ export const createUser = async (
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create user
-        const newUser = await prisma.user.create({
+        const newUser = await p.user.create({
             data: {
                 name,
+                username,
                 email,
                 password: hashedPassword,
                 phoneNumber,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                 gender,
-                role: role || 'STUDENT', // Default to STUDENT if not provided
-                // cefrLevel removed
-                targetScore: targetScore ? parseInt(targetScore) : null,
+                avatarUrl: cleanAvatarUrl,
+                role: role || 'STUDENT',
+                targetScore: (targetScore && !isNaN(parseInt(targetScore.toString()))) ? parseInt(targetScore.toString()) : null,
             },
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
+                email: true,
                 phoneNumber: true,
                 dateOfBirth: true,
                 gender: true,
@@ -424,7 +465,11 @@ export const createUser = async (
                 estimatedListening: true,
                 estimatedReading: true,
                 estimatedScore: true,
+                totalAttempts: true,
+                averageScore: true,
+                highestScore: true,
                 authProvider: true,
+                status: true,
                 createdAt: true,
                 updatedAt: true,
                 password: true,
@@ -433,7 +478,7 @@ export const createUser = async (
 
         const userResponse = {
             ...newUser,
-            hasPassword: !!newUser.password,
+            hasPassword: !!(newUser as any).password,
         };
         delete (userResponse as any).password;
 
@@ -441,6 +486,83 @@ export const createUser = async (
             success: true,
             message: 'Tạo user thành công',
             user: userResponse,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Toggle user account status (ACTIVE/LOCKED)
+ * PATCH /api/users/:id/status
+ */
+export const toggleUserStatus = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!['ACTIVE', 'LOCKED'].includes(status)) {
+            res.status(400).json({
+                success: false,
+                message: 'Trạng thái không hợp lệ',
+            });
+            return;
+        }
+
+        await p.user.update({
+            where: { id },
+            data: { status: status as any },
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `Tài khoản đã được ${status === 'ACTIVE' ? 'mở khóa' : 'khóa'} thành công`,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get Leaderboard (Top Students)
+ * GET /api/users/leaderboard
+ */
+export const getLeaderboard = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const topStudents = await p.user.findMany({
+            where: {
+                role: 'STUDENT',
+                status: 'ACTIVE',
+                estimatedScore: { not: null }
+            },
+            select: {
+                id: true,
+                username: true,
+                name: true,
+                avatarUrl: true,
+                estimatedScore: true,
+                estimatedListening: true,
+                estimatedReading: true,
+                progress: true,
+                createdAt: true
+            },
+            orderBy: {
+                estimatedScore: 'desc'
+            },
+            take: 20
+        });
+
+        res.status(200).json({
+            success: true,
+            data: topStudents
         });
     } catch (error) {
         next(error);

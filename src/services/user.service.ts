@@ -20,7 +20,7 @@ export const getAllUsers = async (
     if (search) {
         where.OR = [
             { name: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
+            { username: { contains: search, mode: 'insensitive' } },
         ];
     }
 
@@ -37,7 +37,7 @@ export const getAllUsers = async (
             take: limit,
             select: {
                 id: true,
-                email: true,
+                username: true,
                 name: true,
                 phoneNumber: true,
                 dateOfBirth: true,
@@ -76,7 +76,7 @@ export const getUserById = async (id: string) => {
         where: { id },
         select: {
             id: true,
-            email: true,
+            username: true,
             name: true,
             phoneNumber: true,
             avatarUrl: true,
@@ -102,7 +102,7 @@ export const updateUser = async (id: string, data: any) => {
         where: { id },
         data: {
             name: data.name,
-            email: data.email,
+            username: data.username,
             phoneNumber: data.phoneNumber,
             dateOfBirth: data.dateOfBirth,
             gender: data.gender,
@@ -113,7 +113,7 @@ export const updateUser = async (id: string, data: any) => {
         },
         select: {
             id: true,
-            email: true,
+            username: true,
             name: true,
             phoneNumber: true,
             dateOfBirth: true,
@@ -135,7 +135,7 @@ export const updateUser = async (id: string, data: any) => {
 
 
 /**
- * Tính toán điểm dự đoán TOEIC cho học viên
+ * Tính toán điểm TOEIC dự kiến dựa trên thành tích TỐT NHẤT (All-time Best) của từng Part
  */
 export const calculateEstimatedScore = async (userId: string) => {
     // Chỉ tính cho role STUDENT
@@ -146,66 +146,42 @@ export const calculateEstimatedScore = async (userId: string) => {
 
     if (!user || user.role !== Role.STUDENT) return null;
 
-    // 1. Lấy dữ liệu Listening (Part 1, 2, 3, 4)
-    const listeningResults = await prisma.userPartProgress.findMany({
-        where: {
-            userId,
-            part: {
-                partNumber: { in: [1, 2, 3, 4] }
-            }
-        },
+    // 1. Lấy tất cả kết quả làm bài từ trước đến nay của user
+    const results = await prisma.userPartProgress.findMany({
+        where: { userId },
         include: { part: true }
     });
 
-    // Gom nhóm theo partId để lấy kết quả tốt nhất/mới nhất cho mỗi part
-    const bestListeningByPart: Record<string, { correct: number, total: number }> = {};
-    listeningResults.forEach(res => {
-        if (!bestListeningByPart[res.partId] || (res.score / res.totalQuestions) > (bestListeningByPart[res.partId].correct / bestListeningByPart[res.partId].total)) {
-            bestListeningByPart[res.partId] = { correct: res.score, total: res.totalQuestions };
+    // 2. Tìm điểm số CAO NHẤT cho từng Part
+    const bestScoreByPart: Record<number, number> = {};
+    results.forEach(res => {
+        const pNum = res.part.partNumber;
+        if (pNum >= 1 && pNum <= 7) {
+            bestScoreByPart[pNum] = Math.max(bestScoreByPart[pNum] || 0, res.score);
         }
     });
 
-    let lCorrect = 0;
-    let lTotal = 0;
-    Object.values(bestListeningByPart).forEach(v => {
-        lCorrect += v.correct;
-        lTotal += v.total;
-    });
+    // 3. Tổng hợp số câu đúng cao nhất theo kỹ năng
+    let totalListeningCorrect = 0; // Tổng Part 1, 2, 3, 4 (Tối đa 100)
+    let totalReadingCorrect = 0;   // Tổng Part 5, 6, 7 (Tối đa 100)
 
-    const lRatio = lTotal > 0 ? lCorrect / lTotal : 0;
-    const estimatedL = getListeningScore(lRatio * 100);
+    for (let i = 1; i <= 4; i++) {
+        totalListeningCorrect += bestScoreByPart[i] || 0;
+    }
+    for (let i = 5; i <= 7; i++) {
+        totalReadingCorrect += bestScoreByPart[i] || 0;
+    }
 
-    // 2. Lấy dữ liệu Reading (Part 5, 6, 7)
-    const readingResults = await prisma.userPartProgress.findMany({
-        where: {
-            userId,
-            part: {
-                partNumber: { in: [5, 6, 7] }
-            }
-        },
-        include: { part: true }
-    });
+    // Giới hạn an toàn 100 câu mỗi mảng
+    totalListeningCorrect = Math.min(100, totalListeningCorrect);
+    totalReadingCorrect = Math.min(100, totalReadingCorrect);
 
-    const bestReadingByPart: Record<string, { correct: number, total: number }> = {};
-    readingResults.forEach(res => {
-        if (!bestReadingByPart[res.partId] || (res.score / res.totalQuestions) > (bestReadingByPart[res.partId].correct / bestReadingByPart[res.partId].total)) {
-            bestReadingByPart[res.partId] = { correct: res.score, total: res.totalQuestions };
-        }
-    });
-
-    let rCorrect = 0;
-    let rTotal = 0;
-    Object.values(bestReadingByPart).forEach(v => {
-        rCorrect += v.correct;
-        rTotal += v.total;
-    });
-
-    const rRatio = rTotal > 0 ? rCorrect / rTotal : 0;
-    const estimatedR = getReadingScore(rRatio * 100);
-
+    // 4. Quy đổi điểm TOEIC từ bảng chuẩn (Không cần đợi đủ bộ)
+    const estimatedL = getListeningScore(totalListeningCorrect);
+    const estimatedR = getReadingScore(totalReadingCorrect);
     const totalEstimated = estimatedL + estimatedR;
 
-    // 3. Cập nhật vào User
+    // 5. Cập nhật vào DB
     await prisma.user.update({
         where: { id: userId },
         data: {
@@ -215,5 +191,7 @@ export const calculateEstimatedScore = async (userId: string) => {
         } as any
     });
 
-    return { totalEstimated, estimatedL, estimatedR };
+    console.log(`[Leaderboard Update] User ${userId}: L:${estimatedL} (Total:${totalListeningCorrect}), R:${estimatedR} (Total:${totalReadingCorrect}), Rank Score:${totalEstimated}`);
+
+    return { totalEstimated, estimatedL, estimatedR, totalListeningCorrect, totalReadingCorrect };
 };

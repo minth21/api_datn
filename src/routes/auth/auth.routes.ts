@@ -14,10 +14,10 @@ const router = Router();
 router.post(
     '/login',
     [
-        body('email')
-            .isEmail()
-            .withMessage('Email không hợp lệ')
-            .normalizeEmail(),
+        body('username')
+            .notEmpty()
+            .withMessage('Vui lòng nhập Tên đăng nhập')
+            .trim(),
         body('password')
             .notEmpty()
             .withMessage('Password không được để trống')
@@ -168,6 +168,47 @@ router.patch(
         validateRequest,
     ],
     authController.changePassword.bind(authController)
+);
+
+/**
+ * @route   POST /api/auth/change-first-password
+ * @desc    Bắt buộc đổi mật khẩu lần đầu đăng nhập (trừ ADMIN)
+ * @access  Private (cần token, isFirstLogin phải là true)
+ */
+router.post(
+    '/change-first-password',
+    authMiddleware,
+    [
+        body('newPassword')
+            .notEmpty()
+            .withMessage('Mật khẩu mới không được để trống')
+            .isLength({ min: 8 })
+            .withMessage('Mật khẩu mới phải có ít nhất 8 ký tự'),
+        validateRequest,
+    ],
+    authController.changeFirstPassword.bind(authController)
+);
+
+/**
+ * @route   POST /api/auth/update-password
+ * @desc    Người dùng tự đổi mật khẩu (cần mật khẩu hiện tại)
+ * @access  Private
+ */
+router.post(
+    '/update-password',
+    authMiddleware,
+    [
+        body('currentPassword')
+            .notEmpty()
+            .withMessage('Mật khẩu hiện tại không được để trống'),
+        body('newPassword')
+            .notEmpty()
+            .withMessage('Mật khẩu mới không được để trống')
+            .isLength({ min: 8 })
+            .withMessage('Mật khẩu mới phải có ít nhất 8 ký tự'),
+        validateRequest,
+    ],
+    authController.updatePassword.bind(authController)
 );
 
 export default router;

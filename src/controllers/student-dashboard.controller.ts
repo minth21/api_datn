@@ -24,7 +24,7 @@ export const getStudentDashboard = async (
         }
 
         // 1. Get User Data with streak fields
-        const user = (await prisma.user.findUnique({
+        const user = (await (prisma as any).user.findUnique({
             where: { id: userId },
             select: {
                 name: true,
@@ -35,6 +35,9 @@ export const getStudentDashboard = async (
                 estimatedReading: true,
                 currentStreak: true,
                 lastActiveAt: true,
+                highestScore: true,
+                averageScore: true,
+                totalAttempts: true,
             } as any,
         })) as any;
 
@@ -85,8 +88,8 @@ export const getStudentDashboard = async (
             }
         }
 
-        // 3. Recent Activities (Last 3 persistence attempts as requested)
-        const recentActivities = await prisma.userPartProgress.findMany({
+        // 3. Recent Activities (Last 3 persistence attempts from TestAttempt)
+        const recentActivities = await prisma.testAttempt.findMany({
             where: { userId },
             take: 3,
             orderBy: { createdAt: 'desc' },
@@ -100,6 +103,11 @@ export const getStudentDashboard = async (
                                 title: true,
                             }
                         }
+                    }
+                },
+                test: {
+                    select: {
+                        title: true,
                     }
                 }
             }
@@ -138,10 +146,39 @@ export const getStudentDashboard = async (
             });
         }
 
-        // 5. Resume Learning
+        // 6. Activity Stats (Frequency Chart - Last 7 days)
+        const activityStats = [];
+        const dayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+        
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - i);
+            
+            const nextDate = new Date(date);
+            nextDate.setDate(date.getDate() + 1);
+
+            const count = await prisma.testAttempt.count({
+                where: {
+                    userId,
+                    createdAt: {
+                        gte: date,
+                        lt: nextDate,
+                    }
+                }
+            });
+
+            activityStats.push({
+                label: dayLabels[date.getDay()],
+                count
+            });
+        }
+        // 7. Resume Learning (Last activity)
         const resumeLearning = recentActivities.length > 0 ? {
-            title: recentActivities[0].part.test.title,
-            subtitle: `Tiếp tục ${recentActivities[0].part.partName}`,
+            id: recentActivities[0].id,
+            partId: recentActivities[0].partId,
+            partNumber: recentActivities[0].part?.partNumber ?? 0,
+            title: recentActivities[0].test?.title ?? recentActivities[0].part?.test?.title ?? 'Luyện tập',
+            createdAt: recentActivities[0].createdAt,
         } : null;
 
         res.status(200).json({
@@ -151,22 +188,29 @@ export const getStudentDashboard = async (
                     name: user.name,
                     progress: user.progress || 0,
                     targetScore: user.targetScore || 800,
-                    estimatedScore: user.estimatedScore ?? 0,
+                    estimatedScore: user.highestScore ?? user.estimatedScore ?? 0,
                     estimatedListening: user.estimatedListening ?? 0,
                     estimatedReading: user.estimatedReading ?? 0,
+                    highestScore: user.highestScore ?? 0,
+                    averageScore: user.averageScore ?? 0,
+                    totalAttempts: user.totalAttempts ?? 0,
                 },
                 streak: updatedStreak,
                 recentActivities: recentActivities.map(a => ({
                     id: a.id,
-                    title: a.part.test.title,
-                    partName: a.part.partName,
-                    score: a.score,
+                    partId: a.partId,
+                    partNumber: a.part?.partNumber ?? 0,
+                    title: a.test?.title ?? a.part?.test?.title ?? 'Luyện tập',
+                    partName: a.part?.partName ?? 'Tổng hợp',
+                    score: a.correctCount,
                     totalQuestions: a.totalQuestions,
-                    percentage: a.percentage,
+                    percentage: a.totalQuestions ? Math.round((a.correctCount! / a.totalQuestions!) * 100) : 0,
+                    toeicScore: a.totalScore,
                     createdAt: a.createdAt,
                 })),
                 recommendations,
                 resumeLearning,
+                activityStats,
             },
         });
     } catch (error) {

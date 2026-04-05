@@ -6,6 +6,8 @@ import {
     updateUserById,
     createUser,
     updateProfile,
+    toggleUserStatus,
+    getLeaderboard,
 } from '../controllers/user.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 import { adminMiddleware } from '../middlewares/admin.middleware';
@@ -17,7 +19,7 @@ const router = express.Router();
  * POST /api/users/avatar - Upload user avatar
  * Protected route - requires authentication
  */
-router.post('/avatar', authMiddleware, uploadAvatar.single('avatar'), uploadUserAvatar);
+router.post('/avatar', authMiddleware, uploadAvatar.single('image'), uploadUserAvatar);
 
 /**
  * PATCH /api/users/me - Update current user profile
@@ -50,6 +52,20 @@ router.get('/:id', authMiddleware, adminMiddleware, getUserById);
  * Admin only
  */
 router.patch('/:id', authMiddleware, adminMiddleware, updateUserById);
+
+/**
+ * GET /api/users/leaderboard - Lấy bảng xếp hạng học viên
+ * Public for all students/teachers
+ */
+router.get('/leaderboard', authMiddleware, getLeaderboard);
+
+/**
+ * PATCH /api/users/:id/status - Khóa/Mở khóa tài khoản
+ * Admin only
+ */
+router.patch('/:id/status', authMiddleware, adminMiddleware, toggleUserStatus);
+
+
 
 export default router;
 

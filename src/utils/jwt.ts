@@ -4,7 +4,7 @@ import { logger } from './logger';
 
 export interface JwtPayload {
     userId: string;
-    email: string;
+    username: string;
     role: string;
 }
 
@@ -17,7 +17,7 @@ export const generateToken = (payload: JwtPayload): string => {
         const token = jwt.sign(payload, config.jwt.secret, {
             expiresIn: config.jwt.expiresIn
         });
-        logger.debug(`Token generated for user: ${payload.email}`);
+        logger.debug(`Token generated for user: ${payload.username}`);
         return token;
     } catch (error) {
         logger.error('Error generating token:', error);

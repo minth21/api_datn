@@ -35,41 +35,10 @@ export class AuthController {
 
     /**
      * POST /api/auth/register
-     * Đăng ký tài khoản mới
+     * Đăng ký tài khoản mới (Bị Khóa)
      */
-    async register(req: Request, res: Response): Promise<void> {
-        try {
-            const {
-                name,
-                email,
-                password,
-                phoneNumber,
-                dateOfBirth,
-                gender,
-                role
-            } = req.body;
-
-            const result = await authService.register({
-                name,
-                email,
-                password,
-                phoneNumber,
-                dateOfBirth,
-                gender,
-                role
-            });
-
-            if (!result.success) {
-                errorResponse(res, result.message || 'Registration failed', HTTP_STATUS.BAD_REQUEST);
-                return;
-            }
-
-            // Trả về response với user và token
-            res.status(HTTP_STATUS.CREATED).json(result);
-        } catch (error) {
-            logger.error('Register error:', error);
-            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
-        }
+    async register(_req: Request, res: Response): Promise<void> {
+        errorResponse(res, 'Vui lòng liên hệ Trung tâm để được cấp tài khoản', HTTP_STATUS.FORBIDDEN);
     }
 
 
@@ -100,73 +69,26 @@ export class AuthController {
 
     /**
      * POST /api/auth/forgot-password
-     * Yêu cầu reset password - Gửi OTP email
+     * Vô hiệu hóa tính năng quên mật khẩu
      */
-    async forgotPassword(req: Request, res: Response): Promise<void> {
-        try {
-            const { email } = req.body;
-
-            if (!email) {
-                errorResponse(res, 'Email là bắt buộc', HTTP_STATUS.BAD_REQUEST);
-                return;
-            }
-
-            const result = await authService.requestPasswordReset(email);
-
-            res.status(HTTP_STATUS.OK).json(result);
-        } catch (error) {
-            logger.error('Forgot password error:', error);
-            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
-        }
+    async forgotPassword(_req: Request, res: Response): Promise<void> {
+        errorResponse(res, 'Chức năng Quên mật khẩu đã bị vô hiệu hóa. Vui lòng liên hệ Trung tâm.', HTTP_STATUS.FORBIDDEN);
     }
 
     /**
      * POST /api/auth/verify-reset-code
-     * Xác thực OTP code (optional)
+     * Vô hiệu hóa
      */
-    async verifyResetCode(req: Request, res: Response): Promise<void> {
-        try {
-            const { code } = req.body;
-
-            if (!code) {
-                errorResponse(res, 'Mã OTP là bắt buộc', HTTP_STATUS.BAD_REQUEST);
-                return;
-            }
-
-            const result = await authService.verifyResetCode(code);
-
-            res.status(HTTP_STATUS.OK).json(result);
-        } catch (error) {
-            logger.error('Verify reset code error:', error);
-            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
-        }
+    async verifyResetCode(_req: Request, res: Response): Promise<void> {
+        errorResponse(res, 'Chức năng đã bị vô hiệu hóa.', HTTP_STATUS.FORBIDDEN);
     }
 
     /**
      * POST /api/auth/reset-password
-     * Reset password với OTP code
+     * Vô hiệu hóa
      */
-    async resetPassword(req: Request, res: Response): Promise<void> {
-        try {
-            const { code, newPassword } = req.body;
-
-            if (!code || !newPassword) {
-                errorResponse(res, 'Mã OTP và mật khẩu mới là bắt buộc', HTTP_STATUS.BAD_REQUEST);
-                return;
-            }
-
-            const result = await authService.resetPassword(code, newPassword);
-
-            if (!result.success) {
-                res.status(HTTP_STATUS.BAD_REQUEST).json(result);
-                return;
-            }
-
-            res.status(HTTP_STATUS.OK).json(result);
-        } catch (error) {
-            logger.error('Reset password error:', error);
-            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
-        }
+    async resetPassword(_req: Request, res: Response): Promise<void> {
+        errorResponse(res, 'Chức năng đã bị vô hiệu hóa.', HTTP_STATUS.FORBIDDEN);
     }
     /**
      * Google Login entry
@@ -213,6 +135,62 @@ export class AuthController {
             res.status(HTTP_STATUS.OK).json(result);
         } catch (error) {
             logger.error('Change password error:', error);
+            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * POST /api/auth/change-first-password
+     * Đổi mật khẩu lần đầu - bắt buộc với non-ADMIN users
+     */
+    async changeFirstPassword(req: Request, res: Response): Promise<void> {
+        try {
+            const userId = (req.user as any).id;
+            const { newPassword } = req.body;
+
+            if (!newPassword) {
+                errorResponse(res, 'Mật khẩu mới là bắt buộc', HTTP_STATUS.BAD_REQUEST);
+                return;
+            }
+
+            const result = await authService.changeFirstPassword(userId, newPassword);
+
+            if (!result.success) {
+                res.status(HTTP_STATUS.BAD_REQUEST).json(result);
+                return;
+            }
+
+            res.status(HTTP_STATUS.OK).json(result);
+        } catch (error) {
+            logger.error('Change first password error:', error);
+            errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * POST /api/auth/update-password
+     * Đổi mật khẩu chủ động (yêu cầu mật khẩu hiện tại)
+     */
+    async updatePassword(req: Request, res: Response): Promise<void> {
+        try {
+            const userId = (req.user as any).id;
+            const { currentPassword, newPassword } = req.body;
+
+            if (!currentPassword || !newPassword) {
+                errorResponse(res, 'Mật khẩu hiện tại và mật khẩu mới là bắt buộc', HTTP_STATUS.BAD_REQUEST);
+                return;
+            }
+
+            const result = await authService.updatePassword(userId, currentPassword, newPassword);
+
+            if (!result.success) {
+                res.status(HTTP_STATUS.BAD_REQUEST).json(result);
+                return;
+            }
+
+            res.status(HTTP_STATUS.OK).json(result);
+        } catch (error) {
+            logger.error('Update password controller error:', error);
             errorResponse(res, 'Internal server error', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }

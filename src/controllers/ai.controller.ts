@@ -1,15 +1,18 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
 import sharp from 'sharp'; // Image optimization
 import {
     generatePart6ExplanationService,
     generateExplanationService,
-    generateBatchExplanationsService,
     generatePart7ExplanationService,
     scanPart7FromImageService,
     scanPart6FromImageService,
     magicScanPart7FromImagesService,
     magicScanPart6FromImagesService,
-    translateWordService
+    translateWordService,
+    enrichPart5QuestionService,
+    enrichPart5BatchService,
+    generateBatchExplanationsService
 } from '../services/ai.service';
 import axios from 'axios';
 
@@ -151,6 +154,38 @@ export const scanPart7 = async (req: Request, res: Response) => {
     }
 };
 
+export const enrichPart5Question = async (req: Request, res: Response) => {
+    try {
+        const { questionText, optionA, optionB, optionC, optionD, correctAnswer } = req.body;
+        
+        if (!questionText || !optionA || !optionB || !optionC || !optionD || !correctAnswer) {
+            return res.status(400).json({ success: false, message: 'Thiếu dữ liệu câu hỏi hoặc đáp án' });
+        }
+
+        const data = await enrichPart5QuestionService(questionText, { A: optionA, B: optionB, C: optionC, D: optionD }, correctAnswer);
+        return res.json({ success: true, data });
+    } catch (error: any) {
+        console.error('AI Part 5 Enrich Error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const enrichPart5Batch = async (req: Request, res: Response) => {
+    try {
+        const { questions } = req.body;
+
+        if (!questions || !Array.isArray(questions) || questions.length === 0) {
+            return res.status(400).json({ success: false, message: 'Danh sách câu hỏi không hợp lệ' });
+        }
+
+        const data = await enrichPart5BatchService(questions);
+        return res.json({ success: true, data });
+    } catch (error: any) {
+        console.error('AI Part 5 Batch Enrich Error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 export const scanPart6 = async (req: Request, res: Response) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'Vui lòng upload ảnh' });
@@ -179,7 +214,7 @@ export const generatePart7Explanations = async (req: Request, res: Response) => 
 
         if (!questions || !passageContent) return res.status(400).json({ success: false, message: 'Thiếu dữ liệu' });
 
-        const data = await generatePart7ExplanationService(passageType || 'text', passageContent, questions);
+        const data = await generatePart7ExplanationService(passageType || 'text', passageContent);
         console.log(`[INFO] AI Part 7 generated successfully for ${questions.length} questions`);
         return res.json({ success: true, data });
     } catch (error: any) {
@@ -190,8 +225,11 @@ export const generatePart7Explanations = async (req: Request, res: Response) => 
 
 export const magicScanPart7 = async (req: Request, res: Response) => {
     try {
-        const files = (req.files as Express.Multer.File[]) || [];
-        
+        const filesFields = req.files as { [fieldname: string]: Express.Multer.File[] };
+        const passageFiles = filesFields['passageImages'] || [];
+        const questionFiles = filesFields['questionImages'] || [];
+        const allFiles = [...passageFiles, ...questionFiles];
+
         let { imageUrls } = req.body;
         if (typeof imageUrls === 'string') imageUrls = JSON.parse(imageUrls);
         
@@ -211,10 +249,27 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
             }
         }
 
-        const uploadedImages = await Promise.all(files.map(async file => ({
+        const uploadedImages = await Promise.all(allFiles.map(async file => ({
             buffer: await optimizeImage(file.buffer),
             mimeType: 'image/jpeg'
         })));
+
+        // --- CLOUDINARY UPLOAD: Upload only passage images to get permanent URLs ---
+        const { uploadExamImageToCloudinary } = await import('../config/cloudinary.config');
+        const passageCloudinaryUrls: string[] = [];
+        
+        console.log(`[AI] Uploading ${passageFiles.length} passage images to Cloudinary...`);
+        for (const file of passageFiles) {
+            try {
+                const uploadRes = await uploadExamImageToCloudinary(file.buffer);
+                if (uploadRes && uploadRes.secure_url) {
+                    passageCloudinaryUrls.push(uploadRes.secure_url);
+                }
+            } catch (err) {
+                console.error('[AI] Cloudinary upload failed for a passage image:', err);
+                passageCloudinaryUrls.push(''); // Placeholder for failure
+            }
+        }
 
         const allImages = [...urlImages, ...uploadedImages];
         if (allImages.length === 0) {
@@ -225,10 +280,11 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
 
         let data: any;
         try {
-            data = await magicScanPart7FromImagesService(allImages);
+            // Pass the Cloudinary URLs as the second argument
+            data = await magicScanPart7FromImagesService(allImages, passageCloudinaryUrls);
         } catch (firstErr: any) {
             console.warn(`[AI] Attempt 1 failed: ${firstErr.message}. Retrying once...`);
-            data = await magicScanPart7FromImagesService(allImages);
+            data = await magicScanPart7FromImagesService(allImages, passageCloudinaryUrls);
         }
 
         const passageRegions: any[] = Array.isArray(data.passageRegions) ? data.passageRegions : [];
@@ -240,8 +296,8 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
             for (const region of passageRegions) {
                 try {
                     const imgIndex = region.pageIndex;
-                    if (imgIndex !== undefined && files[imgIndex]) {
-                        const image = await Jimp.read(files[imgIndex].buffer);
+                    if (imgIndex !== undefined && allFiles[imgIndex]) {
+                        const image = await Jimp.read(allFiles[imgIndex].buffer);
                         const width = image.bitmap.width;
                         const height = image.bitmap.height;
                         const [ymin, xmin, ymax, xmax] = region.box_2d;
@@ -278,8 +334,11 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
 
 export const magicScanPart6 = async (req: Request, res: Response) => {
     try {
-        const files = (req.files as Express.Multer.File[]) || [];
-        
+        const filesFields = req.files as { [fieldname: string]: Express.Multer.File[] };
+        const passageFiles = filesFields['passageImages'] || [];
+        const questionFiles = filesFields['questionImages'] || [];
+        const allFiles = [...passageFiles, ...questionFiles];
+
         let { imageUrls } = req.body;
         if (typeof imageUrls === 'string') imageUrls = JSON.parse(imageUrls);
 
@@ -299,7 +358,7 @@ export const magicScanPart6 = async (req: Request, res: Response) => {
             }
         }
 
-        const uploadedImages = await Promise.all(files.map(async file => ({
+        const uploadedImages = await Promise.all(allFiles.map(async file => ({
             buffer: await optimizeImage(file.buffer),
             mimeType: file.mimetype
         })));
@@ -332,5 +391,51 @@ export const translateWord = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('AI Translate Word Error:', error);
         return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const prisma = new PrismaClient();
+
+export const getAiTimeline = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { userId } = req.params;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const skip = (page - 1) * limit;
+
+        // Note: Using (prisma as any) temporarily if lint persists after generate
+        const assessments = await (prisma as any).aiAssessment.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            include: {
+                testAttempt: {
+                    select: {
+                        id: true,
+                        totalScore: true,
+                        correctCount: true,
+                        totalQuestions: true,
+                        test: { select: { title: true } },
+                        part: { select: { partName: true, partNumber: true } }
+                    }
+                }
+            }
+        });
+
+        const total = await (prisma as any).aiAssessment.count({ where: { userId } });
+
+        return res.status(200).json({
+            success: true,
+            data: assessments,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        return next(error);
     }
 };

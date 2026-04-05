@@ -1,0 +1,3 @@
+﻿src/controllers/ai-job.controller.ts(2,35): error TS2307: Cannot find module '../services/ai-job.service' or its corresponding type declarations.
+src/controllers/class.controller.ts(199,19): error TS6133: 'teacherId' is declared but its value is never read.
+src/services/auth/auth.service.ts(16,1): error TS6133: 'emailService' is declared but its value is never read.

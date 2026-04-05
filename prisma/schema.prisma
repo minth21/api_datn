@@ -17,35 +17,60 @@ datasource db {
 
 model User {
   id          String    @id @default(uuid())
-  email       String    @unique
-  password    String?   // Hashed with bcrypt (Optional for Google Auth)
+  username    String    @unique // Mã định danh chính (admin, GV001, HV001)
+  password    String? // Hashed with bcrypt
   name        String
+  email       String?   @unique // Email cá nhân (cho HV, GV, CV)
   phoneNumber String?
   dateOfBirth DateTime?
   gender      Gender?
   avatarUrl   String?
-  role        Role      @default(STUDENT)
+  role        Role       @default(STUDENT)
+  status      UserStatus @default(ACTIVE)
+
+  progress           Int  @default(0)
+  targetScore        Int? // Optional target score (e.g., 750)
+  estimatedScore     Int? // Predicted total score
+  estimatedListening Int? // Predicted listening score
+  estimatedReading   Int? // Predicted reading score
+
+  currentStreak Int       @default(0)
+  lastActiveAt  DateTime?
   
-  progress    Int       @default(0)
-  targetScore Int?       // Optional target score (e.g., 750)
-  estimatedScore     Int?   // Predicted total score
-  estimatedListening Int?   // Predicted listening score
-  estimatedReading   Int?   // Predicted reading score
-  
-  currentStreak      Int       @default(0)
-  lastActiveAt       DateTime?
-  
-  authProvider String   @default("LOCAL") // "LOCAL" or "GOOGLE"
-  googleId     String?  @unique
-  
+  // Analytics Fields
+  totalAttempts Int @default(0)
+  highestScore  Int @default(0)
+  averageScore  Int @default(0)
+
+  // AI Assessments
+  aiAssessments AiAssessment[]
+
+  authProvider String  @default("LOCAL") // "LOCAL" or "GOOGLE"
+  isFirstLogin Boolean @default(true)  // Bắt buộc đổi mật khẩu lần đầu (trừ ADMIN)
+  googleId     String? @unique
+
+  studentClassId String?
+  studentClass   Class?  @relation("StudentClass", fields: [studentClassId], references: [id])
+
+  managedClasses Class[] @relation("TeacherClass")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  allowAiPushNotification Boolean @default(true) // Cho phép nhận thông báo AI cá nhân hóa
+
   passwordResetTokens PasswordResetToken[]
   partProgress        UserPartProgress[]
-  exams               Test[]                @relation("ExamAuthor")
+  exams               Test[]               @relation("ExamAuthor")
+  flashcards          Flashcard[]
+  testAttempts        TestAttempt[]
+  notifications       Notification[]
+  testComplaints      TestComplaint[]
+  feedbacksSent       StudentFeedback[] @relation("StudentFeedbackSender")
+  feedbacksReceived   StudentFeedback[] @relation("StudentFeedbackReceiver")
+  materialProgress    UserMaterialProgress[]
 
-  @@index([email])
+  @@index([username])
   @@index([createdAt])
   @@map("users")
 }
@@ -57,22 +82,22 @@ model User {
 // ============================================
 
 model UserPartProgress {
-  id                String   @id @default(uuid())
-  userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  partId            String
-  part              Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
-  
-  attemptNumber     Int      // 1, 2, 3...
-  score             Int      // Raw score (e.g., 25/30)
-  totalQuestions    Int
-  percentage        Float    // Mathematical % (score/total)
-  userAnswers       String?  @db.Text // JSON string of user answers { "0": "A", "1": "C" }
-  aiAssessment      String?  @db.Text // Text feedback from AI
-  aiProgressScore   Float?   // 0-100 score evaluated by AI considering difficulty/history
-  toeicScore        Int?     // Converted TOEIC score (0-495) using reading/listening scale
-  
-  createdAt         DateTime @default(now())
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partId String
+  part   Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  attemptNumber   Int // 1, 2, 3...
+  score           Int // Raw score (e.g., 25/30)
+  totalQuestions  Int
+  percentage      Float // Mathematical % (score/total)
+  userAnswers     String? @db.Text // JSON string of user answers { "0": "A", "1": "C" }
+  aiAssessment    String? @db.Text // Text feedback from AI
+  aiProgressScore Float? // 0-100 score evaluated by AI considering difficulty/history
+  toeicScore      Int? // Converted TOEIC score (0-495) using reading/listening scale
+
+  createdAt DateTime @default(now())
 
   @@unique([userId, partId, attemptNumber]) // Prevent duplicate attempt numbers
   @@map("user_part_progress")
@@ -84,9 +109,14 @@ model UserPartProgress {
 
 enum Role {
   STUDENT
-  REVIEWER
+  TEACHER
   SPECIALIST
   ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  LOCKED
 }
 
 enum Gender {
@@ -95,7 +125,6 @@ enum Gender {
   OTHER
 }
 
-
 // ============================================
 // PASSWORD RESET TOKEN MODEL
 // ============================================
@@ -103,7 +132,7 @@ enum Gender {
 model PasswordResetToken {
   id        String   @id @default(uuid())
   userId    String
-  code      String   // 6-digit OTP code
+  code      String // 6-digit OTP code
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -121,20 +150,23 @@ model PasswordResetToken {
 // ============================================
 
 model Test {
-  id              String     @id @default(uuid())
-  title           String     // "TOEIC-TEST Test 1"
-  testType        TestType   // LISTENING or READING
-  difficulty      Difficulty
-  status          TestStatus @default(LOCKED)
-  duration        Int        // Thời gian (phút)
-  totalQuestions  Int        // Tổng số câu hỏi
-  
-  authorId        String?
-  author          User?      @relation("ExamAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  id             String     @id @default(uuid())
+  title          String // "TOEIC-TEST Test 1"
+  testType       TestType // LISTENING or READING
+  difficulty     Difficulty
+  status         TestStatus @default(PENDING)
+  duration       Int // Thời gian (phút)
+  totalQuestions Int // Tổng số câu hỏi
 
-  parts           Part[]
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  authorId String?
+  author   User?   @relation("ExamAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  rejectReason   String?    @db.Text
+  parts          Part[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  testAttempts   TestAttempt[]
+  testComplaints TestComplaint[]
 
   @@index([status])
   @@index([difficulty])
@@ -142,23 +174,26 @@ model Test {
 }
 
 model Part {
-  id              String     @id @default(uuid())
-  testId          String
-  test            Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
-  partNumber      Int        // 1-7
-  partName        String     // "Part 1: Photographs"
-  instructions    String?    @db.Text // Hướng dẫn làm bài
-  instructionImgUrl String?  // Ảnh minh họa hướng dẫn
-  status          PartStatus @default(ACTIVE) // Active/Inactive
-  orderIndex      Int        // Display order (same as partNumber)
-  audioUrl        String?    // URL audio cho Part (Listening only)
-  audioDuration   Int?       // Thời lượng audio (giây)
-  totalQuestions  Int        // Số câu hỏi trong Part
-  timeLimit       Int?       // Thời gian làm bài (seconds)
-  questions       Question[]
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  userProgress    UserPartProgress[]
+  id                String             @id @default(uuid())
+  testId            String
+  test              Test               @relation(fields: [testId], references: [id], onDelete: Cascade)
+  partNumber        Int // 1-7
+  partName          String // "Part 1: Photographs"
+  instructions      String?            @db.Text // Hướng dẫn làm bài
+  instructionImgUrl String? // Ảnh minh họa hướng dẫn
+  status            PartStatus         @default(PENDING)
+  rejectReason      String?            @db.Text // Lý do từ chối (Admin điền khi reject)
+  orderIndex        Int // Display order (same as partNumber)
+  audioUrl          String? // URL audio cho Part (Listening only)
+  audioDuration     Int? // Thời lượng audio (giây)
+  totalQuestions    Int // Số câu hỏi trong Part
+  timeLimit         Int? // Thời gian làm bài (seconds)
+  questions         Question[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userProgress      UserPartProgress[]
+  flashcards        Flashcard[]
+  testAttempts      TestAttempt[]
 
   @@unique([testId, partNumber])
   @@index([testId])
@@ -166,52 +201,142 @@ model Part {
 }
 
 model Question {
-  id                String   @id @default(uuid())
-  partId            String
-  part              Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
-  questionNumber    Int      // Số thứ tự trong Part (1, 2, 3...)
-  passage           String?  @db.Text // Đoạn văn text (Part 6/7 - shared by question group)
-  passageImageUrl   String?  @db.Text // CSV of passage image URLs (Part 6/7, hiện ở App)
+  id                     String  @id @default(uuid())
+  partId                 String
+  part                   Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+  questionNumber         Int // Số thứ tự trong Part (1, 2, 3...)
+  passage                String? @db.Text // Đoạn văn text (Part 6/7 - shared by question group)
+  passageImageUrl        String? @db.Text // CSV of passage image URLs (Part 6/7, hiện ở App)
   passageTranslationData String? @db.Text // JSON stringified array of {en, vi} sentences cho Part 6 Touch-to-Translate
-  questionScanUrl   String?  @db.Text // CSV of question scan image URLs (Part 6/7, chỉ dùng để quét AI)
-  questionText      String?  @db.Text // Nội dung câu hỏi (null cho Part 1)
-  imageUrl          String?  // Hình ảnh thực của câu hỏi (Part 1, 2, 3)
-  optionA           String?  // Đáp án A
-  optionB           String?  // Đáp án B
-  optionC           String?  // Đáp án C
-  optionD           String?  // Đáp án D
-  correctAnswer     String   // "A", "B", "C", "D"
-  explanation       String?  @db.Text // Giải thích đáp án
-  audioUrl          String?  // Audio URL (Parts 1, 2, 3, 4)
-  transcript        String?  // Transcript for audio
-  topic_tag         String?  // Chủ điểm ngữ pháp/từ vựng (e.g., "Thì hiện tại", "Từ loại")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  questionScanUrl        String? @db.Text // CSV of question scan image URLs (Part 6/7, chỉ dùng để quét AI)
+  questionText           String? @db.Text // Nội dung câu hỏi (null cho Part 1)
+  imageUrl               String? // Hình ảnh thực của câu hỏi (Part 1, 2, 3)
+  optionA                String? // Đáp án A
+  optionB                String? // Đáp án B
+  optionC                String? // Đáp án C
+  optionD                String? // Đáp án D
+  correctAnswer          String // "A", "B", "C", "D"
+  explanation            String? @db.Text // Giải thích chính/Lời nhắc giáo viên
+  analysis               String? @db.Text // ✅ Phân tích sâu từ AI (Blue Card)
+  evidence               String? @db.Text // ✅ Bằng chứng từ bài đọc (Green Card)
+
+  // 💎 NEW: Các trường "Tách biệt Tuyệt đối" theo phong cách Antigravity
+  passageTitle        String? @db.Text // Tiêu đề đoạn văn (Questions 147-150 refer to...)
+  questionTranslation String? @db.Text // Bản dịch câu hỏi
+  optionTranslations  String? @db.Text // Bản dịch 4 đáp án (Dạng JSON)
+  keyVocabulary       String? @db.Text // Danh sách từ vựng quan trọng (Dạng JSON - Chứa được vô số từ)
+
+  audioUrl   String? // Audio URL (Parts 1, 2, 3, 4)
+  transcript String? // Transcript for audio
+  topic_tag  String? // Chủ điểm ngữ pháp/từ vựng (e.g., "Thì hiện tại", "Từ loại")
+  level      Difficulty? // Mức độ khó (EASY, MEDIUM, HARD)
+  status     QuestionStatus @default(PENDING)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // 💎 NEW: Structural support for Part 7 Multi-Passages
+  // Data structure: [{ "label": "Email", "imageUrl": "...", "translation": [...] }]
+  passageData Json? @db.JsonB
+  attemptDetails AttemptDetail[]
 
   @@unique([partId, questionNumber])
   @@index([partId])
+  @@index([status])
   @@map("questions")
+}
+
+// ============================================
+// FLASHCARD MODEL - Vocabulary Learning
+// ============================================
+
+model Flashcard {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  word      String
+  meaning   String
+  ipa       String?
+  exampleEn String? @db.Text
+  exampleVi String? @db.Text
+
+  // Progress Tracking (SRS Lite)
+  status         FlashcardStatus @default(NEW)
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime?
+  reviewCount    Int             @default(0)
+
+  // Origin
+  partId String?
+  part   Part?   @relation(fields: [partId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("flashcards")
+}
+
+enum FlashcardStatus {
+  NEW
+  LEARNING
+  MASTERED
 }
 
 // ============================================
 // BACKGROUND JOB MODELS
 // ============================================
 
-
-
 // ============================================
 // EXAM BANK ENUMS
 // ============================================
 
-enum Difficulty {
-  EASY    // A1-A2
-  MEDIUM  // B1-B2
-  HARD    // C1
+// ============================================
+// CLASS MODEL - Center Management
+// ============================================
+
+model Class {
+  id          String   @id @default(uuid())
+  classCode   String?  @unique // Mã lớp, vd: T650-01
+  className   String
+  description String?
+  teacherId   String
+  teacher     User        @relation("TeacherClass", fields: [teacherId], references: [id])
+  students    User[]      @relation("StudentClass")
+  feedbacks   StudentFeedback[]
+  materials   ClassMaterial[] // Tài liệu bổ trợ
+  status      ClassStatus @default(ACTIVE)
+  lastActivityAt DateTime? // Theo dõi hoạt động gần nhất của lớp
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("classes")
 }
 
+enum Difficulty {
+  A1_A2
+  B1_B2
+  B2_C1
+  C1
+  C2
+  EASY
+  MEDIUM
+  HARD
+}
+
+
 enum TestStatus {
-  LOCKED    // Khóa - Học viên không làm được
-  UNLOCKED  // Mở - Học viên làm được
+  PENDING
+  ACTIVE
+  LOCKED
+  REJECTED
+}
+
+enum ClassStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum TestType {
@@ -220,6 +345,236 @@ enum TestType {
 }
 
 enum PartStatus {
+  PENDING
   ACTIVE
-  INACTIVE
+  LOCKED
+  REJECTED
+}
+
+enum QuestionStatus {
+  PENDING
+  ACTIVE
+  LOCKED
+}
+
+// ============================================
+// CATEGORY MODEL
+// ============================================
+
+model Category {
+  id   String @id @default(uuid())
+  name String @unique
+
+  @@map("categories")
+}
+
+
+// ============================================
+// NEW: PRACTICE HISTORY MODELS (Antigravity v2)
+// ============================================
+
+model TestAttempt {
+  id             String          @id @default(uuid())
+  userId         String
+  testId         String?         // Có thể null nếu làm từng Part lẻ
+  partId         String?         // ID của Part (nếu làm lẻ)
+  startTime      DateTime        @default(now())
+  endTime        DateTime?
+  durationSeconds Int?            // Tổng thời gian làm bài (giây)
+  
+  listeningScore Int?            @default(0)
+  readingScore   Int?            @default(0)
+  totalScore     Int?            @default(0)
+  correctCount   Int?            @default(0)
+  totalQuestions Int?            @default(0)
+  
+  aiAnalysis     String?         @db.Text // Lưu nhận xét JSON của AI cá nhân hóa
+  teacherNote    String?         @db.Text // Ghi chú từ giáo viên sau khi xem bài
+  
+  details        AttemptDetail[] // Quan hệ 1-N với bảng Detail
+  
+  // AI Coaching
+  aiAssessments  AiAssessment[]
+  
+  // Relations
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  test           Test?           @relation(fields: [testId], references: [id], onDelete: SetNull)
+  part           Part?           @relation(fields: [partId], references: [id], onDelete: SetNull)
+  
+  createdAt      DateTime        @default(now())
+
+  @@map("test_attempts")
+}
+
+model AttemptDetail {
+  id             String          @id @default(uuid())
+  attemptId      String
+  questionId     String
+  userAnswer     String?         // Ví dụ: 'A', 'B', 'C', 'D'
+  isCorrect      Boolean         @default(false)
+  timeSpent      Int?            // Thời gian trả lời câu này (giây)
+
+  // Relations
+  attempt        TestAttempt     @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@map("attempt_details")
+}
+
+// ============================================
+// NEW: NOTIFICATION SYSTEM
+// ============================================
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title     String
+  content   String           @db.Text
+  type      NotificationType @default(SYSTEM)
+  isRead    Boolean          @default(false)
+  
+  // IDs related to the event (TestAttempt ID, Test ID, etc.)
+  relatedId String?
+  
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model TestComplaint {
+  id        String   @id @default(uuid())
+  testId    String
+  test      Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId    String   // Người gửi (GV)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  status    String   @default("PENDING") // PENDING, RESOLVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("test_complaints")
+}
+
+model StudentFeedback {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+  imageUrl  String?  // Dự phòng cho tương lai
+  status    String   @default("PENDING") // PENDING, RESOLVED
+  
+  userId    String   // Người gửi (HV)
+  user      User     @relation("StudentFeedbackSender", fields: [userId], references: [id], onDelete: Cascade)
+  
+  teacherId String   // Người nhận (GV)
+  teacher   User     @relation("StudentFeedbackReceiver", fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  classId   String   // Lớp học liên quan
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([teacherId])
+  @@index([classId])
+  @@map("student_feedbacks")
+}
+
+enum NotificationType {
+  TEST_SUBMITTED    // Học viên nộp bài -> Admin/GV
+  TEST_PENDING      // Chuyên viên tạo đề -> Admin duyệt
+  TEST_APPROVED     // Admin duyệt đề -> Chuyên viên nhận tin
+  TEST_REJECTED     // Admin từ chối đề -> Chuyên viên sửa
+  TEST_COMPLAINT    // GV gửi khiếu nại -> Admin/CV
+  COMPLAINT_RESOLVED // Admin/CV xử lý xong -> GV nhận tin
+  STUDENT_FEEDBACK  // Học viên gửi ý kiến -> Giáo viên
+  FEEDBACK_RESOLVED  // Giáo viên xử lý xong -> Học viên nhận tin
+  SYSTEM            // Thông báo hệ thống chung
+}
+
+// --- AI COACHING & TIMELINE SYSTEM ---
+
+enum AiAssessmentType {
+  PERFORMANCE
+  COACHING
+  EXPLANATION
+}
+
+enum TrendType {
+  UP
+  DOWN
+  STABLE
+}
+
+model AiAssessment {
+  id            String           @id @default(uuid())
+  userId        String
+  testAttemptId String?
+  type          AiAssessmentType
+  title         String
+  summary       String           @db.Text
+  content       Json             // Lưu chi tiết: skills, strengths, weaknesses, v.v.
+  score         Int?
+  trend         TrendType?
+  createdAt     DateTime         @default(now())
+
+  // Relations
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testAttempt   TestAttempt?     @relation(fields: [testAttemptId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// LMS MODELS - Materials & Schedule
+// ============================================
+
+model ClassMaterial {
+  id          String   @id @default(uuid())
+  classId     String
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  type        MaterialType @default(LINK) // PDF, LINK, VIDEO
+  category    MaterialCategory @default(MATERIAL) // MATERIAL, HOMEWORK
+  url         String   @db.Text           // Link Cloudinary hoặc Youtube
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userProgress UserMaterialProgress[]
+
+  @@index([classId])
+  @@map("class_materials")
+}
+
+enum MaterialType {
+  PDF
+  LINK
+  VIDEO
+}
+
+enum MaterialCategory {
+  MATERIAL
+  HOMEWORK
+}
+
+model UserMaterialProgress {
+  id         String  @id @default(uuid())
+  userId     String
+  materialId String
+  isCompleted Boolean @default(false)
+  updatedAt  DateTime @updatedAt @default(now())
+
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material   ClassMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, materialId])
+  @@index([userId])
+  @@index([materialId])
+  @@map("user_material_progress")
 }

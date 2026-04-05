@@ -1,12 +1,12 @@
 // Login Request DTO
 export interface LoginDto {
-    email: string;
+    username: string; // Mã định danh (admin, GV001, HV001)
     password: string;
 }
 
 // Register Request DTO
 export interface RegisterDto {
-    email: string;
+    username: string;
     password: string;
     name: string;
     phoneNumber?: string;
@@ -18,10 +18,11 @@ export interface RegisterDto {
 // User Response DTO
 export interface UserDto {
     id: string;
-    email: string;
+    username: string; // Mã định danh
     name: string;
     role: string; // STUDENT, REVIEWER, SPECIALIST, ADMIN
     authProvider: string; // "LOCAL" or "GOOGLE"
+    isFirstLogin?: boolean; // Bất buộc đổi mật khẩu lần đầu (trừ ADMIN)
     phoneNumber?: string;
     dateOfBirth?: string; // ISO 8601 date string
     gender?: string; // MALE, FEMALE, OTHER
@@ -35,6 +36,9 @@ export interface UserDto {
     createdAt: string; // ISO 8601 date string
     totalTestsTaken: number;
     averageScore: number;
+    classId?: string;
+    className?: string;
+    teacherName?: string;
 }
 
 // Login Response DTO
@@ -59,7 +63,7 @@ export interface ApiResponse<T = any> {
 
 // Forgot Password Request DTO
 export interface ForgotPasswordDto {
-    email: string;
+    username: string;
 }
 
 // Verify Reset Code Request DTO

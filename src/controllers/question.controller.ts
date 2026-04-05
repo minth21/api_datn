@@ -4,7 +4,37 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { validateAndStandardizePassageData } from '../utils/passageValidator';
 
+import { Difficulty } from '@prisma/client';
 const prisma = new PrismaClient();
+
+console.log('RUNTIME Difficulty Enum:', Object.values(Difficulty));
+
+/**
+ * Helper to sanitize and map Difficulty values
+ */
+const sanitizeDifficulty = (level: string | null | undefined): Difficulty | null => {
+    if (!level) return null;
+    
+    const upperLevel = level.toUpperCase().trim();
+    
+    // Map common variants to enum values
+    const mapping: Record<string, Difficulty> = {
+        'A1': Difficulty.A1_A2,
+        'A2': Difficulty.A1_A2,
+        'A1_A2': Difficulty.A1_A2,
+        'B1': Difficulty.B1_B2,
+        'B2': Difficulty.B1_B2,
+        'B1_B2': Difficulty.B1_B2,
+        'B2_C1': Difficulty.B2_C1,
+        'C1': Difficulty.C1,
+        'C2': Difficulty.C2,
+        'EASY': Difficulty.EASY,
+        'MEDIUM': Difficulty.MEDIUM,
+        'HARD': Difficulty.HARD
+    };
+
+    return mapping[upperLevel] || null;
+};
 
 /**
  * Get all questions by Part ID
@@ -17,9 +47,28 @@ export const getQuestionsByPartId = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
+        const { level, status } = req.query;
+        const role = (req as any).user?.role;
+        const isAdminOrSpecialist = role === 'ADMIN' || role === 'SPECIALIST';
 
-        const questions = await prisma.question.findMany({
-            where: { partId },
+        const where: any = { partId };
+        
+        // Filter by status (Admin/Specialist can see all, students only ACTIVE)
+        if (isAdminOrSpecialist) {
+            if (status && status !== 'ALL') {
+                where.status = status;
+            }
+        } else {
+            where.status = 'ACTIVE';
+        }
+
+        // Filter by level if provided
+        if (level && level !== 'ALL') {
+            where.level = level;
+        }
+
+        const questions = await (prisma.question as any).findMany({
+            where,
             orderBy: {
                 questionNumber: 'asc',
             },
@@ -54,6 +103,13 @@ export const createQuestion = async (
             optionD,
             correctAnswer,
             explanation,
+            analysis, // ✅ New
+            evidence, // ✅ New
+            questionTranslation, // ✅ New
+            optionTranslations, // ✅ New
+            keyVocabulary, // ✅ New
+            passageTitle, // ✅ New
+            level, // ✅ New Mức độ khó
             audioUrl,
             imageUrl, // Add imageUrl
             transcript
@@ -114,7 +170,7 @@ export const createQuestion = async (
             return;
         }
 
-        const newQuestion = await prisma.question.create({
+        const newQuestion = await (prisma.question as any).create({
             data: {
                 partId,
                 questionNumber: qNum,
@@ -125,9 +181,18 @@ export const createQuestion = async (
                 optionD,
                 correctAnswer,
                 explanation,
+                analysis, // ✅ New
+                evidence, // ✅ New
+                questionTranslation, // ✅ New
+                optionTranslations, // ✅ New
+                keyVocabulary, // ✅ New
+                passageTitle, // ✅ New
+                level, // ✅ New
+
                 audioUrl,
                 imageUrl, // Add imageUrl
-                transcript
+                transcript,
+                status: 'PENDING' as any // Default to PENDING for new questions
             },
         });
 
@@ -161,6 +226,13 @@ export const updateQuestion = async (
             optionD,
             correctAnswer,
             explanation,
+            analysis, // ✅ New
+            evidence, // ✅ New
+            questionTranslation, // ✅ New
+            optionTranslations, // ✅ New
+            keyVocabulary, // ✅ New
+            passageTitle, // ✅ New
+            level, // ✅ New
             passage,
             audioUrl,
             imageUrl,
@@ -176,7 +248,7 @@ export const updateQuestion = async (
             sanitizedData = validateAndStandardizePassageData(passageTranslationData);
         }
 
-        const updatedQuestion = await prisma.question.update({
+        const updatedQuestion = await (prisma.question as any).update({
             where: { id },
             data: {
                 questionNumber: questionNumber ? parseInt(questionNumber) : undefined,
@@ -187,6 +259,13 @@ export const updateQuestion = async (
                 optionD,
                 correctAnswer,
                 explanation,
+                analysis, // ✅ New
+                evidence, // ✅ New
+                questionTranslation, // ✅ New
+                optionTranslations, // ✅ New
+                keyVocabulary, // ✅ New
+                passageTitle, // ✅ New
+                level, // ✅ New
                 passage,
                 audioUrl,
                 imageUrl,
@@ -197,30 +276,8 @@ export const updateQuestion = async (
             },
         });
 
-        // Tự động đồng bộ passageTranslationData cho các câu hỏi cùng passage (Tránh Redundancy / Inconsistent Data)
-        if (sanitizedData !== null) {
-            const currentQuestion = await prisma.question.findUnique({
-                where: { id },
-                include: { part: true }
-            });
-
-            // Chỉ áp dụng cho Part 6 và 7 nơi passage dùng chung
-            if (currentQuestion && (currentQuestion.part.partNumber === 6 || currentQuestion.part.partNumber === 7)) {
-                if (currentQuestion.passage) {
-                    await prisma.question.updateMany({
-                        where: {
-                            partId: currentQuestion.partId,
-                            passage: currentQuestion.passage,
-                            id: { not: id } // Không cần update lại câu hiện tại
-                        },
-                        data: {
-                            passageTranslationData: sanitizedData
-                        }
-                    });
-                }
-            }
-        }
-
+        // Removed redundant updateMany sync. The frontend now handles patching all questions in a group explicitly.
+        
         res.status(200).json({
             success: true,
             message: 'Cập nhật câu hỏi thành công',
@@ -242,7 +299,15 @@ export const deleteQuestion = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
+        const user = (req as any).user;
 
+        if (user.role !== 'ADMIN') {
+            res.status(403).json({
+                success: false,
+                message: 'Chỉ ADMIN mới có quyền xóa câu hỏi.',
+            });
+            return;
+        }
         // Get question to extract image/audio URLs before deleting
         const question = await prisma.question.findUnique({
             where: { id },
@@ -256,32 +321,10 @@ export const deleteQuestion = async (
             return;
         }
 
-        // Delete from database first
+        // Delete from database
         await prisma.question.delete({
             where: { id },
         });
-
-        // Then try to delete from Cloudinary (don't fail if this fails)
-        try {
-            const { deleteFromCloudinary, extractPublicId } = await import('../config/cloudinary.config');
-
-            if (question.imageUrl) {
-                const publicId = extractPublicId(question.imageUrl);
-                if (publicId) {
-                    await deleteFromCloudinary(publicId);
-                }
-            }
-
-            if (question.audioUrl) {
-                const publicId = extractPublicId(question.audioUrl);
-                if (publicId) {
-                    await deleteFromCloudinary(publicId);
-                }
-            }
-        } catch (cloudinaryError) {
-            // Log but don't fail the request
-            console.error('Failed to delete from Cloudinary:', cloudinaryError);
-        }
 
         res.status(200).json({
             success: true,
@@ -303,9 +346,38 @@ export const deleteAllQuestionsByPartId = async (
 ): Promise<void> => {
     try {
         const { partId } = req.params;
+        const user = (req as any).user;
+
+        if (user.role !== 'ADMIN') {
+            res.status(403).json({
+                success: false,
+                message: 'Chỉ ADMIN mới có quyền xóa toàn bộ câu hỏi của phần thi.',
+            });
+            return;
+        }
+
+        // Get all questions first to cleanup assets
+        const questions = await prisma.question.findMany({
+            where: { partId },
+            select: {
+                imageUrl: true,
+                audioUrl: true,
+                passageImageUrl: true,
+                questionScanUrl: true
+            }
+        });
 
         const result = await prisma.question.deleteMany({
             where: { partId },
+        });
+
+        // Cleanup Cloudinary assets
+        const { cleanupCloudinaryAssets } = await import('../config/cloudinary.config');
+        questions.forEach(q => {
+            cleanupCloudinaryAssets(q.imageUrl);
+            cleanupCloudinaryAssets(q.audioUrl);
+            cleanupCloudinaryAssets(q.passageImageUrl);
+            cleanupCloudinaryAssets(q.questionScanUrl);
         });
 
         res.status(200).json({
@@ -328,6 +400,15 @@ export const bulkDeleteQuestions = async (
     next: NextFunction
 ): Promise<void> => {
     try {
+        const user = (req as any).user;
+
+        if (user.role !== 'ADMIN') {
+            res.status(403).json({
+                success: false,
+                message: 'Chỉ ADMIN mới có quyền xóa hàng loạt câu hỏi.',
+            });
+            return;
+        }
         const { questionIds } = req.body;
 
         if (!Array.isArray(questionIds) || questionIds.length === 0) {
@@ -338,12 +419,34 @@ export const bulkDeleteQuestions = async (
             return;
         }
 
+        // Get questions first to cleanup assets
+        const questions = await prisma.question.findMany({
+            where: {
+                id: { in: questionIds }
+            },
+            select: {
+                imageUrl: true,
+                audioUrl: true,
+                passageImageUrl: true,
+                questionScanUrl: true
+            }
+        });
+
         const result = await prisma.question.deleteMany({
             where: {
                 id: {
                     in: questionIds,
                 },
             },
+        });
+
+        // Cleanup Cloudinary assets
+        const { cleanupCloudinaryAssets } = await import('../config/cloudinary.config');
+        questions.forEach(q => {
+            cleanupCloudinaryAssets(q.imageUrl);
+            cleanupCloudinaryAssets(q.audioUrl);
+            cleanupCloudinaryAssets(q.passageImageUrl);
+            cleanupCloudinaryAssets(q.questionScanUrl);
         });
 
         res.status(200).json({
@@ -397,10 +500,16 @@ export const createBatchQuestions = async (
         }
 
         // Validate passage requirement based on Part number
-        if ((part.partNumber === 6 || part.partNumber === 7) && !passage) {
+        // ✅ Nới lỏng kiểm tra: Chấp nhận nếu có text 'passage' HOẶC có ảnh 'passageImageUrl' (chuỗi không rỗng)
+        const firstQuestionPassageImage = questions[0]?.passageImageUrl;
+        const hasPassage = (passage && passage.trim().length > 0) || (firstQuestionPassageImage && firstQuestionPassageImage.trim().length > 0);
+        
+        console.log(`[Batch Save] Part: ${part.partNumber}, hasPassageText: ${!!passage}, hasPassageImage: ${!!firstQuestionPassageImage}`);
+
+        if ((part.partNumber === 6 || part.partNumber === 7) && !hasPassage) {
             res.status(400).json({
                 success: false,
-                message: 'Đoạn văn là bắt buộc đối với Part 6 và 7',
+                message: 'Đoạn văn là bắt buộc đối với Part 6 và 7 (Vui lòng nhập văn bản hoặc upload ảnh đoạn văn)',
             });
             return;
         }
@@ -498,9 +607,17 @@ export const createBatchQuestions = async (
                 optionD: q.optionD,
                 correctAnswer: q.correctAnswer,
                 explanation: q.explanation,
+                analysis: q.analysis || null, // ✅ New
+                evidence: q.evidence || null, // ✅ New
+                questionTranslation: q.questionTranslation || null, // ✅ New
+                optionTranslations: q.optionTranslations || null, // ✅ New
+                keyVocabulary: q.keyVocabulary || null, // ✅ New
+                passageTitle: q.passageTitle || null, // ✅ New
+                level: sanitizeDifficulty(q.level), // ✅ Sanitized
                 audioUrl: audioUrl || q.audioUrl,
                 transcript: transcript || q.transcript,
                 imageUrl: q.imageUrl || null,
+                status: 'PENDING' as any // Default to PENDING for batch questions
             };
         });
 
@@ -538,8 +655,14 @@ export const createBatchQuestions = async (
             return;
         }
 
+        // Deep Diagnostic
+        console.log('--- DIAGNOSTIC START ---');
+        console.log('Difficulty Enum Runtime:', Object.values(Difficulty));
+        console.log('First Question Data:', JSON.stringify(questionsToInsert[0], null, 2));
+        console.log('--- DIAGNOSTIC END ---');
+
         // Bulk insert
-        await prisma.question.createMany({
+        await (prisma.question as any).createMany({
             data: questionsToInsert,
         });
 
@@ -676,6 +799,7 @@ export const importQuestions = async (
                     optionD: q.optionD,
                     correctAnswer: q.correctAnswer,
                     explanation: q.explanation,
+                    status: 'PENDING' as any // Default to PENDING for imported questions
                 });
             }
         });
@@ -768,6 +892,125 @@ export const downloadTemplate = async (
                 console.error('Error downloading template:', err);
                 next(err);
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+
+/**
+ * Approve a question (ADMIN only)
+ * PATCH /api/questions/:id/approve
+ */
+export const approveQuestion = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const user = (req as any).user;
+
+        if (user.role !== 'ADMIN') {
+            res.status(403).json({
+                success: false,
+                message: 'Chào bạn, chỉ ADMIN mới có quyền duyệt câu hỏi. Vui lòng liên hệ quản trị viên.',
+            });
+            return;
+        }
+
+        const updatedQuestion = await (prisma.question as any).update({
+            where: { id },
+            data: { status: 'ACTIVE' },
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Đã duyệt câu hỏi thành công!',
+            question: updatedQuestion,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Toggle lock/unlock status of a question (ADMIN only)
+ * PATCH /api/questions/:id/toggle-lock
+ */
+export const toggleQuestionLock = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const user = (req as any).user;
+
+        if (user.role !== 'ADMIN') {
+            res.status(403).json({
+                success: false,
+                message: 'Chào bạn, chỉ ADMIN mới có quyền khóa/khôi phục câu hỏi. Vui lòng liên hệ quản trị viên.',
+            });
+            return;
+        }
+
+        const question = await prisma.question.findUnique({ where: { id } });
+        if (!question) {
+            res.status(404).json({ success: false, message: 'Không tìm thấy câu hỏi.' });
+            return;
+        }
+
+        const newStatus = (question as any).status === 'LOCKED' ? 'ACTIVE' : 'LOCKED';
+        const updatedQuestion = await (prisma.question as any).update({
+            where: { id },
+            data: { status: newStatus },
+        });
+
+        res.status(200).json({
+            success: true,
+            message: newStatus === 'LOCKED' ? 'Đã khóa câu hỏi thành công!' : 'Đã khôi phục câu hỏi thành công!',
+            question: updatedQuestion,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Bulk toggle status for multiple questions
+ * PATCH /api/questions/bulk-status
+ */
+export const bulkToggleStatus = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const { questionIds, status } = req.body;
+
+        if (!questionIds || !Array.isArray(questionIds) || questionIds.length === 0) {
+            res.status(400).json({ success: false, message: 'Danh sách câu hỏi không hợp lệ.' });
+            return;
+        }
+
+        const validStatuses = ['ACTIVE', 'LOCKED', 'PENDING'];
+        if (!validStatuses.includes(status)) {
+            res.status(400).json({ success: false, message: `Trạng thái không hợp lệ. Chỉ chấp nhận: ${validStatuses.join(', ')}` });
+            return;
+        }
+
+        const result = await (prisma.question as any).updateMany({
+            where: { id: { in: questionIds } },
+            data: { status },
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `Đã cập nhật trạng thái ${result.count} câu hỏi thành ${status}`,
+            count: result.count,
         });
     } catch (error) {
         next(error);

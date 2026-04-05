@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
+import { Role } from '@prisma/client';
 
 /**
- * Middleware để kiểm tra user có role nằm trong danh sách cho phép không
- * Phai dùng sau authMiddleware
+ * Middleware để kiểm tra user có thuộc một trong các roles cho phép không
+ * Phải dùng sau authMiddleware
  */
-export const roleMiddleware = (allowedRoles: string[]) => {
+export const roleMiddleware = (allowedRoles: Role[]) => {
     return (req: Request, res: Response, next: NextFunction): void => {
         const user = req.user;
 
@@ -19,7 +20,7 @@ export const roleMiddleware = (allowedRoles: string[]) => {
         if (!allowedRoles.includes(user.role)) {
             res.status(403).json({
                 success: false,
-                message: 'Forbidden - Bạn không có quyền thực hiện hành động này (Yêu cầu: ' + allowedRoles.join('/') + ')',
+                message: 'Forbidden - Bạn không có quyền thực hiện hành động này',
             });
             return;
         }

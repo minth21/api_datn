@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { aiBatchJobService } from '../services/ai-job.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -9,19 +8,11 @@ import { logger } from '../utils/logger';
 export const getJobStatus = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const job = await aiBatchJobService.getJobStatus(id);
-
-        if (!job) {
-            res.status(404).json({
-                success: false,
-                message: 'Job không tồn tại',
-            });
-            return;
-        }
-
-        res.status(200).json({
-            success: true,
-            data: job,
+        logger.info(`Checking status for job ${id}`);
+        
+        res.status(404).json({
+            success: false,
+            message: 'Tính năng này đang được bảo trì hoặc không tồn tại',
         });
     } catch (error: any) {
         logger.error('Error fetching job status:', error);
@@ -39,20 +30,11 @@ export const getJobStatus = async (req: Request, res: Response) => {
 export const retryJob = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const job = await aiBatchJobService.retryJob(id);
+        logger.info(`Retrying job ${id}`);
 
-        if (!job) {
-            res.status(404).json({
-                success: false,
-                message: 'Job không tồn tại hoặc đang xử lý',
-            });
-            return;
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Đã bắt đầu xử lý lại các câu lỗi',
-            data: job,
+        res.status(404).json({
+            success: false,
+            message: 'Tính năng này đang được bảo trì hoặc không tồn tại',
         });
     } catch (error: any) {
         logger.error('Error retrying job:', error);

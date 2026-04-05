@@ -13,7 +13,7 @@ import { prisma } from '../../config/prisma';
 import bcrypt from 'bcrypt';
 import { User } from '@prisma/client';
 import { generateToken, verifyToken } from '../../utils/jwt';
-import { emailService } from '../email/email.service';
+// import { emailService } from '../email/email.service';
 
 const SALT_ROUNDS = 10;
 
@@ -25,27 +25,36 @@ export class AuthService {
      * Đăng nhập với email và password
      */
     async login(loginDto: LoginDto): Promise<LoginResponseDto> {
-        const { email, password } = loginDto;
+        const { username, password } = loginDto;
 
-        logger.info(`Login attempt for email: ${email}`);
+        logger.info(`Login attempt for username: ${username}`);
 
         try {
-            // Tìm user trong database
+            // Tìm user trong database bằng username
             const user = await prisma.user.findUnique({
-                where: { email },
+                where: { username },
             });
 
             if (!user) {
-                logger.warn(`Login failed: User not found - ${email}`);
+                logger.warn(`Login failed: User not found - ${username}`);
                 return {
                     success: false,
                     message: ERROR_MESSAGES.INVALID_CREDENTIALS,
                 };
             }
 
+            // Check if account is locked
+            if (user.status === 'LOCKED') {
+                logger.warn(`Login failed: Account locked - ${username}`);
+                return {
+                    success: false,
+                    message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.',
+                };
+            }
+
             // Verify password and Auth Provider
             if (user.authProvider === 'GOOGLE') {
-                logger.warn(`Login failed: Account linked to Google - ${email}`);
+                logger.warn(`Login failed: Account linked to Google - ${username}`);
                 return {
                     success: false,
                     message: 'Tài khoản này được liên kết với Google. Vui lòng sử dụng tính năng Đăng nhập bằng Google.',
@@ -54,17 +63,16 @@ export class AuthService {
 
             // Handle Local accounts that might not have a password (legacy data)
             if (!user.password) {
-                logger.warn(`Login failed: Account has no password - ${email}`);
+                logger.warn(`Login failed: Account has no password - ${username}`);
                 return {
                     success: false,
                     message: ERROR_MESSAGES.INVALID_CREDENTIALS,
                 };
             }
-
             const isPasswordValid = await bcrypt.compare(password, user.password);
 
             if (!isPasswordValid) {
-                logger.warn(`Login failed: Invalid password - ${email}`);
+                logger.warn(`Login failed: Invalid password - ${username}`);
                 return {
                     success: false,
                     message: ERROR_MESSAGES.INVALID_CREDENTIALS,
@@ -77,11 +85,11 @@ export class AuthService {
             // Generate JWT token
             const token = generateToken({
                 userId: user.id,
-                email: user.email,
+                username: user.username,
                 role: user.role,
             });
 
-            logger.info(`Login successful for user: ${user.email}`);
+            logger.info(`Login successful for user ID: ${user.username}`);
 
             return {
                 success: true,
@@ -101,67 +109,11 @@ export class AuthService {
     /**
      * Đăng ký user mới
      */
-    async register(registerDto: RegisterDto): Promise<LoginResponseDto> {
-        const { name, email, password, phoneNumber, dateOfBirth, gender } = registerDto;
-
-        logger.info(`Register attempt for email: ${email}`);
-
-        try {
-            // Kiểm tra email đã tồn tại chưa
-            const existingUser = await prisma.user.findUnique({
-                where: { email },
-            });
-
-            if (existingUser) {
-                logger.warn(`Registration failed: Email already exists - ${email}`);
-                return {
-                    success: false,
-                    message: 'Email đã được sử dụng',
-                };
-            }
-
-            // Hash password
-            const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-            // Tạo user mới trong database
-            const newUser = await prisma.user.create({
-                data: {
-                    email,
-                    password: hashedPassword,
-                    name,
-                    phoneNumber,
-                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-                    gender: gender as any, // Cast to Gender enum if provided
-                    role: 'STUDENT',
-                    // cefrLevel removed
-                },
-            });
-
-            // Tạo UserDto (loại bỏ password)
-            const userDto: UserDto = this.mapUserToDto(newUser);
-
-            // Generate JWT token
-            const token = generateToken({
-                userId: newUser.id,
-                email: newUser.email,
-                role: newUser.role,
-            });
-
-            logger.info(`Registration successful for user: ${newUser.email}`);
-
-            return {
-                success: true,
-                message: 'Đăng ký thành công!',
-                user: userDto,
-                token,
-            };
-        } catch (error) {
-            logger.error('Registration error:', error);
-            return {
-                success: false,
-                message: 'Đã xảy ra lỗi khi đăng ký',
-            };
-        }
+    async register(_registerDto: RegisterDto): Promise<LoginResponseDto> {
+        return {
+            success: false,
+            message: 'Vui lòng liên hệ Trung tâm để được cấp tài khoản',
+        };
     }
 
 
@@ -180,9 +132,18 @@ export class AuthService {
                 return null;
             }
 
-            // Get user from database
+            // Get user from database with class information
             const user = await prisma.user.findUnique({
                 where: { id: decoded.userId },
+                include: {
+                    studentClass: {
+                        include: {
+                            teacher: {
+                                select: { name: true }
+                            }
+                        }
+                    }
+                }
             });
 
             if (!user) {
@@ -201,65 +162,14 @@ export class AuthService {
     // PASSWORD RESET METHODS
     // ============================================
 
-    /**
-     * Yêu cầu reset password - Gửi OTP qua email
-     */
-    async requestPasswordReset(email: string): Promise<PasswordResetResponseDto> {
-        logger.info(`Password reset requested for email: ${email}`);
-
+    async requestPasswordReset(username: string): Promise<PasswordResetResponseDto> {
+        logger.info(`Password reset requested for username: ${username}`);
         try {
-            // Tìm user theo email
-            const user = await prisma.user.findUnique({
-                where: { email },
-            });
-
-            // Không tiết lộ thông tin email có tồn tại hay không (security best practice)
-            if (!user) {
-                logger.warn(`Password reset requested for non-existent email: ${email}`);
-                // Vẫn trả về success để tránh email enumeration
-                return {
-                    success: true,
-                    message: 'Nếu email tồn tại trong hệ thống, bạn sẽ nhận được mã OTP trong vòng vài phút.',
-                };
-            }
-
-            // Tạo mã OTP 6 số ngẫu nhiên
-            const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-            // Tính thời gian hết hạn (15 phút)
-            const expiresAt = new Date();
-            expiresAt.setMinutes(expiresAt.getMinutes() + 15);
-
-            // Lưu OTP vào database
-            await prisma.passwordResetToken.create({
-                data: {
-                    userId: user.id,
-                    code: otpCode,
-                    expiresAt,
-                    used: false,
-                },
-            });
-
-            // Gửi email chứa OTP
-            const emailSent = await emailService.sendPasswordResetEmail(
-                user.email,
-                otpCode,
-                user.name
-            );
-
-            if (!emailSent) {
-                logger.error(`Failed to send password reset email to ${email}`);
-                return {
-                    success: false,
-                    message: 'Không thể gửi email. Vui lòng thử lại sau.',
-                };
-            }
-
-            logger.info(`Password reset OTP sent successfully to ${email}`);
-
+            // Logic reset password qua email tạm thời vô hiệu hóa do đã xóa trường email
+            // Bạn có thể đăng ký lại logic này bằng cách sử dụng username hoặc một cơ chế khác
             return {
-                success: true,
-                message: 'Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư.',
+                success: false,
+                message: 'Chức năng reset mật khẩu qua email hiện chưa khả dụng. Vui lòng liên hệ Admin.',
             };
         } catch (error) {
             logger.error('Request password reset error:', error);
@@ -391,7 +301,7 @@ export class AuthService {
                 }),
             ]);
 
-            logger.info(`Password reset successful for user: ${resetToken.user.email}`);
+            logger.info(`Password reset successful for user ID: ${resetToken.user.username}`);
 
             return {
                 success: true,
@@ -443,15 +353,15 @@ export class AuthService {
 
             logger.info(`Google Login attempt for email: ${email}`);
 
-            let user = await prisma.user.findUnique({
-                where: { email },
+            let user = await prisma.user.findFirst({
+                where: { username: email }, // Sử dụng email làm username cho Google users
             });
 
             if (!user) {
                 logger.info(`Creating new user from Google Login: ${email}`);
                 user = await prisma.user.create({
                     data: {
-                        email,
+                        username: email,
                         name: name || 'Google User',
                         avatarUrl: picture,
                         password: null, // Explicitly null for Google auth
@@ -468,9 +378,18 @@ export class AuthService {
                 }
             }
 
+            // Check if account is locked
+            if (user.status === 'LOCKED') {
+                logger.warn(`Google Login failed: Account locked - ${user.username}`);
+                return {
+                    success: false,
+                    message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.',
+                };
+            }
+
             const token = generateToken({
                 userId: user.id,
-                email: user.email,
+                username: user.username,
                 role: user.role,
             });
 
@@ -539,25 +458,112 @@ export class AuthService {
     private mapUserToDto(user: User): UserDto {
         return {
             id: user.id,
-            email: user.email,
+            username: user.username,
             name: user.name,
             role: user.role,
             authProvider: user.authProvider,
+            isFirstLogin: user.isFirstLogin ?? true, // Bất buộc đổi mật khẩu lần đầu
             phoneNumber: user.phoneNumber || undefined,
             dateOfBirth: user.dateOfBirth?.toISOString() || undefined,
             gender: user.gender || undefined,
             avatarUrl: user.avatarUrl || undefined,
             targetScore: user.targetScore || undefined,
-            estimatedScore: (user as any).estimatedScore || undefined,
-            estimatedListening: (user as any).estimatedListening || undefined,
-            estimatedReading: (user as any).estimatedReading || undefined,
+            estimatedScore: user.estimatedScore || undefined,
+            estimatedListening: user.estimatedListening || undefined,
+            estimatedReading: user.estimatedReading || undefined,
             progress: user.progress || 0,
             hasPassword: !!user.password,
             createdAt: user.createdAt.toISOString(),
-            // Default values for now (will be updated when we add test results)
             totalTestsTaken: 0,
             averageScore: 0,
+            classId: (user as any).studentClass?.id || undefined,
+            className: (user as any).studentClass?.className || undefined,
+            teacherName: (user as any).studentClass?.teacher?.name || undefined,
         };
+    }
+
+    /**
+     * Thực hiện đổi mật khẩu lần đầu đăng nhập
+     * Chỉ cho phép nếu isFirstLogin === true
+     */
+    async changeFirstPassword(userId: string, newPassword: string): Promise<ApiResponse> {
+        try {
+            const user = await prisma.user.findUnique({ where: { id: userId } });
+
+            if (!user) {
+                return { success: false, message: 'Người dùng không tồn tại' };
+            }
+
+            if (!user.isFirstLogin) {
+                return { success: false, message: 'Tài khoản đã đổi mật khẩu. Vui lòng dùng chức năng Đổi mật khẩu thông thường.' };
+            }
+
+            if (!newPassword || newPassword.length < 8) {
+                return { success: false, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' };
+            }
+
+            const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+            await prisma.user.update({
+                where: { id: userId },
+                data: {
+                    password: hashedPassword,
+                    isFirstLogin: false,
+                } as any,
+            });
+
+            logger.info(`User ${userId} completed first-login password change.`);
+            return { success: true, message: 'Đổi mật khẩu thành công. Chào mừng bạn đến với hệ thống!' };
+        } catch (error) {
+            logger.error('changeFirstPassword error:', error);
+            return { success: false, message: 'Đã xảy ra lỗi khi đổi mật khẩu' };
+        }
+    }
+
+    /**
+     * Đổi mật khẩu chủ động (Voluntary Change Password)
+     * Yêu cầu mật khẩu hiện tại
+     */
+    async updatePassword(userId: string, currentPassword: string, newPassword: string): Promise<ApiResponse> {
+        try {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+            });
+
+            if (!user) {
+                return { success: false, message: 'Người dùng không tồn tại' };
+            }
+
+            // Kiểm tra mật khẩu hiện tại
+            if (!user.password) {
+                return { success: false, message: 'Tài khoản này chưa có mật khẩu (Đăng nhập Google). Không thể sử dụng tính năng này.' };
+            }
+
+            const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isPasswordValid) {
+                return { success: false, message: 'Mật khẩu hiện tại không chính xác' };
+            }
+
+            if (newPassword.length < 8) {
+                return { success: false, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' };
+            }
+
+            // Hash password mới
+            const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+            await prisma.user.update({
+                where: { id: userId },
+                data: {
+                    password: hashedPassword,
+                    isFirstLogin: false // Nếu chủ động đổi thì cũng coi như xong lần đầu
+                } as any,
+            });
+
+            return { success: true, message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' };
+        } catch (error) {
+            logger.error('Update password error:', error);
+            return { success: false, message: 'Đã xảy ra lỗi khi đổi mật khẩu' };
+        }
     }
 }
 

@@ -22,7 +22,7 @@ export interface PassageBlock {
 /**
  * Validates and standardizes passage translation data.
  * @param data Stringified JSON or Object
- * @returns Standardized JSON string
+ * @returns Standardized flat JSON string [ { type: 'passage', ... } ]
  */
 export const validateAndStandardizePassageData = (data: any): string | null => {
     if (!data) return null;
@@ -34,58 +34,52 @@ export const validateAndStandardizePassageData = (data: any): string | null => {
         throw new Error('Định dạng JSON của bản dịch không hợp lệ.');
     }
 
-    // --- Support for "Insight Object" wrapper: { passages: [], vocabulary: [], questions: [] } ---
-    let vocabulary: any[] = [];
-    let aiQuestions: any[] = [];
-    
+    // --- RULE 4: Flatten any nested "Insight Object" wrapper ---
+    // wrapper: { passages: [], vocabulary: [], questions: [] }
     if (parsed && !Array.isArray(parsed)) {
-        // Support both "passages" and "passageTranslations" keys
         const rawPassages = parsed.passages || parsed.passageTranslations;
-        
         if (Array.isArray(rawPassages)) {
-            vocabulary = parsed.vocabulary || [];
-            aiQuestions = parsed.questions || [];
             parsed = rawPassages;
-        } else if (parsed.en || parsed.vi) {
-             // Handle single object case (Legacy)
-             parsed = [parsed];
-        } else {
-            // Might be a single passage object without wrapper
+        } else if (parsed.en || parsed.vi || parsed.items || parsed.sentences) {
+            // Handle single object case
             parsed = [parsed];
+        } else {
+            // Unexpected object structure
+            return null;
         }
     }
 
     if (!Array.isArray(parsed)) return null;
 
-    // Auto-migration & Validation
+    // Standardization & Validation
     const standardized: any[] = parsed.map((block: any, index: number) => {
         // Case 1: Legacy format (Flat array of {en, vi})
         if (block.en || block.vi) {
             return {
                 type: 'passage',
-                label: index === 0 ? 'Passage' : `Passage ${index + 1}`,
+                label: String(block.label || (index === 0 ? 'Passage' : `Passage ${index + 1}`)),
                 items: [{
-                    en: String(block.en || ''),
-                    vi: String(block.vi || ''),
+                    en: String(block.en || '').replace(/&nbsp;/g, ' ').trim(),
+                    vi: String(block.vi || '').replace(/&nbsp;/g, ' ').trim(),
                     vocab: Array.isArray(block.vocab) ? block.vocab.map((v: any) => ({
-                        text: String(v.text || v.lemma || ''),
-                        meaning: String(v.meaning || ''),
-                        ipa: String(v.ipa || '')
+                        text: String(v.text || v.lemma || '').replace(/&nbsp;/g, ' ').trim(),
+                        meaning: String(v.meaning || '').replace(/&nbsp;/g, ' ').trim(),
+                        ipa: String(v.ipa || '').replace(/&nbsp;/g, ' ').trim()
                     })) : []
                 }]
             };
         }
 
-        // Case 2: New format (supports both 'sentences' and 'items')
+        // Case 2: Standard format (supports both 'sentences' and 'items')
         const rawItems = Array.isArray(block.items) ? block.items : (Array.isArray(block.sentences) ? block.sentences : []);
         
         const items = rawItems.map((s: any) => ({
-            en: String(s.en || ''),
-            vi: String(s.vi || ''),
+            en: String(s.en || '').replace(/&nbsp;/g, ' ').trim(),
+            vi: String(s.vi || '').replace(/&nbsp;/g, ' ').trim(),
             vocab: Array.isArray(s.vocab) ? s.vocab.map((v: any) => ({
-                text: String(v.text || v.lemma || ''),
-                meaning: String(v.meaning || ''),
-                ipa: String(v.ipa || '')
+                text: String(v.text || v.lemma || '').replace(/&nbsp;/g, ' ').trim(),
+                meaning: String(v.meaning || '').replace(/&nbsp;/g, ' ').trim(),
+                ipa: String(v.ipa || '').replace(/&nbsp;/g, ' ').trim()
             })) : []
         }));
 
@@ -98,14 +92,6 @@ export const validateAndStandardizePassageData = (data: any): string | null => {
 
     if (standardized.length === 0) return null;
 
-    // Preserve metadata if exists
-    if (vocabulary.length > 0 || aiQuestions.length > 0) {
-        return JSON.stringify({
-            passages: standardized,
-            vocabulary,
-            questions: aiQuestions
-        });
-    }
-
+    // RULE 4: Always return the flat array as JSON string
     return JSON.stringify(standardized);
 };

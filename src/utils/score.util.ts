@@ -3,41 +3,52 @@
  * Converts number of correct questions (0-100) to TOEIC scaled score (5-495)
  */
 
-export const LISTENING_SCORE_MAP = [
-  5, 5, 5, 5, 5, 5, 5, 10, 15, 20, 
-  25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 
-  75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 
-  125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 
-  175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 
-  225, 230, 235, 240, 245, 250, 255, 260, 265, 270, 
-  275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 
-  325, 330, 335, 340, 345, 350, 355, 360, 365, 370, 
-  375, 380, 385, 395, 400, 405, 410, 415, 420, 425, 
-  430, 435, 440, 445, 450, 455, 460, 465, 470, 475, 480, 485, 490, 495, 495, 495, 495
-];
+/**
+ * TOEIC Score Mapping Utility
+ * Converts number of correct questions (0-100) to TOEIC scaled score (5-495)
+ */
 
-// Note: The mapping provided by user has 101 items (0-100)
-// Adjusted the start to match 0-100 correctly based on typical TOEIC charts if needed, 
-// but using the user provided array exactly.
-// User provided LISTENING_SCORE_MAP has 100 items in the prompt description, checking length.
-// Actually, let's re-count or just use the exact sequence.
-export const LISTENING_RAW = [5, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255, 260, 265, 270, 275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 325, 330, 335, 340, 345, 350, 355, 360, 365, 370, 375, 380, 385, 395, 400, 405, 410, 415, 420, 425, 430, 435, 440, 445, 450, 455, 460, 465, 470, 475, 480, 485, 490, 495, 495, 495, 495];
-// Count: 100 items. Index 0-99. 0 correct = index 0. 100 correct? 
-// TOEIC has 100 questions per skill. So 0 to 100 is 101 values.
-// I will append one more 495 if it's 100 items to make it 101 (0 to 100).
+export const LISTENING_SCORE_MAP: Record<number, number> = {
+  0: 5,   1: 15,  2: 20,  3: 25,  4: 30,  5: 35,  6: 40,  7: 45,  8: 50,  9: 55,  10: 60,
+  11: 65, 12: 70, 13: 75, 14: 80, 15: 85, 16: 90, 17: 95, 18: 100, 19: 105, 20: 110,
+  21: 115, 22: 120, 23: 125, 24: 130, 25: 135, 26: 140, 27: 145, 28: 150, 29: 155, 30: 160,
+  31: 165, 32: 170, 33: 175, 34: 180, 35: 185, 36: 190, 37: 195, 38: 200, 39: 205, 40: 210,
+  41: 215, 42: 220, 43: 225, 44: 230, 45: 235, 46: 240, 47: 245, 48: 250, 49: 255, 50: 260,
+  51: 265, 52: 270, 53: 275, 54: 280, 55: 285, 56: 290, 57: 295, 58: 300, 59: 305, 60: 310,
+  61: 315, 62: 320, 63: 325, 64: 330, 65: 335, 66: 340, 67: 345, 68: 350, 69: 355, 70: 360,
+  71: 365, 72: 370, 73: 375, 74: 380, 75: 385, 76: 395, 77: 400, 78: 405, 79: 410, 80: 415,
+  81: 420, 82: 425, 83: 430, 84: 435, 85: 440, 86: 445, 87: 450, 88: 455, 89: 460, 90: 465,
+  91: 470, 92: 475, 93: 480, 94: 485, 95: 490, 96: 495, 97: 495, 98: 495, 99: 495, 100: 495
+};
 
-export const LISTENING_FINAL = [...LISTENING_RAW];
-if (LISTENING_FINAL.length === 100) LISTENING_FINAL.push(495);
-
-export const READING_RAW = [5, 5, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255, 260, 265, 270, 275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 325, 330, 335, 340, 345, 350, 355, 360, 365, 370, 375, 380, 385, 390, 395, 400, 405, 410, 415, 420, 425, 430, 435, 440, 445, 450, 455, 460, 465, 470, 475, 480, 485, 490, 495];
-// Count: 101 items. Index 0-100. Perfect.
+export const READING_SCORE_MAP: Record<number, number> = {
+  0: 5,   1: 5,   2: 5,   3: 10,  4: 15,  5: 20,  6: 25,  7: 30,  8: 35,  9: 40,  10: 45,
+  11: 50, 12: 55, 13: 60, 14: 65, 15: 70, 16: 75, 17: 80, 18: 85, 19: 90, 20: 95,
+  21: 100, 22: 105, 23: 110, 24: 115, 25: 120, 26: 125, 27: 130, 28: 135, 29: 140, 30: 145,
+  31: 150, 32: 155, 33: 160, 34: 165, 35: 170, 36: 175, 37: 180, 38: 185, 39: 190, 40: 195,
+  41: 200, 42: 205, 43: 210, 44: 215, 45: 220, 46: 225, 47: 230, 48: 235, 49: 240, 50: 245,
+  51: 250, 52: 255, 53: 260, 54: 265, 55: 270, 56: 275, 57: 280, 58: 285, 59: 290, 60: 295,
+  61: 300, 62: 305, 63: 310, 64: 315, 65: 320, 66: 325, 67: 330, 68: 335, 69: 340, 70: 345,
+  71: 350, 72: 355, 73: 360, 74: 365, 75: 370, 76: 375, 77: 380, 78: 385, 79: 390, 80: 395,
+  81: 400, 82: 405, 83: 410, 84: 415, 85: 420, 86: 425, 87: 430, 88: 435, 89: 440, 90: 445,
+  91: 450, 92: 455, 93: 460, 94: 465, 95: 470, 96: 475, 97: 480, 98: 485, 99: 490, 100: 495
+};
 
 export const getListeningScore = (correctCount: number): number => {
   const index = Math.max(0, Math.min(100, Math.round(correctCount)));
-  return LISTENING_FINAL[index];
+  return LISTENING_SCORE_MAP[index] || 5;
 };
 
 export const getReadingScore = (correctCount: number): number => {
   const index = Math.max(0, Math.min(100, Math.round(correctCount)));
-  return READING_RAW[index];
+  return READING_SCORE_MAP[index] || 5;
+};
+
+/**
+ * Scale correct answers based on total questions to 100-scale and then get TOEIC score.
+ */
+export const calculateScaledScore = (correct: number, total: number, type: 'LISTENING' | 'READING'): number => {
+  if (total === 0) return 5;
+  const equivalentCorrect = (correct / total) * 100;
+  return type === 'LISTENING' ? getListeningScore(equivalentCorrect) : getReadingScore(equivalentCorrect);
 };
