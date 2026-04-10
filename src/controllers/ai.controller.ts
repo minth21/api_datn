@@ -255,7 +255,7 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
         })));
 
         // --- CLOUDINARY UPLOAD: Upload only passage images to get permanent URLs ---
-        const { uploadExamImageToCloudinary } = await import('../config/cloudinary.config');
+        const { uploadExamImageToCloudinary, saveAssetToDb } = await import('../config/cloudinary.config');
         const passageCloudinaryUrls: string[] = [];
         
         console.log(`[AI] Uploading ${passageFiles.length} passage images to Cloudinary...`);
@@ -263,6 +263,8 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
             try {
                 const uploadRes = await uploadExamImageToCloudinary(file.buffer);
                 if (uploadRes && uploadRes.secure_url) {
+                    // Log to DB (Antigravity Audit Log)
+                    await saveAssetToDb(uploadRes, (req as any).user?.id);
                     passageCloudinaryUrls.push(uploadRes.secure_url);
                 }
             } catch (err) {
@@ -290,7 +292,7 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
         const passageRegions: any[] = Array.isArray(data.passageRegions) ? data.passageRegions : [];
         if (passageRegions.length > 0) {
             const Jimp: any = (await import('jimp')).Jimp;
-            const { uploadExamImageToCloudinary } = await import('../config/cloudinary.config');
+            const { uploadExamImageToCloudinary, saveAssetToDb: saveAssetToDbCrop } = await import('../config/cloudinary.config');
             const croppedUrls: string[] = [];
 
             for (const region of passageRegions) {
@@ -311,6 +313,8 @@ export const magicScanPart7 = async (req: Request, res: Response) => {
                             const croppedBuffer = await image.getBuffer('image/jpeg');
                             const uploadRes = await uploadExamImageToCloudinary(croppedBuffer);
                             if (uploadRes && uploadRes.secure_url) {
+                                // Log to DB (Antigravity Audit Log)
+                                await saveAssetToDbCrop(uploadRes, (req as any).user?.id);
                                 croppedUrls.push(uploadRes.secure_url);
                             }
                         }

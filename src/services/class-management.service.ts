@@ -1,6 +1,6 @@
 import { prisma } from '../config/prisma';
 import { CreateClassMaterialDto } from '../dto/class-management.dto';
-import { uploadFileToCloudinary } from '../config/cloudinary.config';
+import { uploadFileToCloudinary, saveAssetToDb } from '../config/cloudinary.config';
 import { MaterialType } from '@prisma/client';
 
 export class ClassManagementService {
@@ -36,7 +36,13 @@ export class ClassManagementService {
 
     // 2. Handle Case: Upload to Cloudinary (for PDF or Direct Video)
     if (file && (dto.type === MaterialType.PDF || dto.type === MaterialType.VIDEO)) {
-      const uploadRes = await uploadFileToCloudinary(file.buffer, 'class_materials');
+      // Create subfolder based on type (e.g., class_materials/pdf)
+      const subFolder = `class_materials/${dto.type.toLowerCase()}s`;
+      const uploadRes = await uploadFileToCloudinary(file.buffer, subFolder);
+      
+      // Log to DB (Antigravity Audit Log)
+      await saveAssetToDb(uploadRes, teacherId);
+      
       finalUrl = uploadRes.secure_url;
     }
 

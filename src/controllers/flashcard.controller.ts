@@ -63,7 +63,7 @@ export const bulkCreateFlashcards = async (
             userId,
             word: f.word,
             meaning: f.meaning,
-            ipa: f.ipa,
+            ipa: f.ipa || f.pronunciation,
             exampleEn: f.exampleEn,
             exampleVi: f.exampleVi,
             partId: partId || null,

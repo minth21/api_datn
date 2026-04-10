@@ -578,3 +578,28 @@ model UserMaterialProgress {
   @@index([materialId])
   @@map("user_material_progress")
 }
+
+// ============================================
+// NEW: CLOUDINARY ASSET TRACKING MODEL
+// ============================================
+
+model CloudinaryAsset {
+  id           String   @id @default(uuid())
+  publicId     String   @unique
+  url          String   @db.Text
+  resourceType String   // image, video, raw
+  folder       String?
+  format       String?
+  bytes        Int?
+  width        Int?
+  height       Int?
+  
+  // Optional: Link to uploader if needed
+  uploaderId   String?
+  
+  createdAt    DateTime @default(now())
+
+  @@index([publicId])
+  @@index([resourceType])
+  @@map("cloudinary_assets")
+}

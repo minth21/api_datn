@@ -259,32 +259,37 @@ export const evaluateProgress = async (
     userName: string = 'Bạn', 
     topicMatrixJson: string = '{}', 
     partName: string = 'Part 5',
-    targetScore?: number
+    targetScore?: number,
+    isFullTest: boolean = false
 ) => {
     const currentPercentage = Math.round((currentScore / totalQuestions) * 100);
     const timeMinutes = (timeTakenSeconds / 60).toFixed(1);
 
     try {
         const isListening = ['Part 1', 'Part 2', 'Part 3', 'Part 4'].some(p => partName.includes(p));
-        const isPerfect = currentScore === totalQuestions;
         
         const commonPromptContext = `
             Học viên: ${userName} | Mục tiêu: ${targetScore || 'Chưa đặt'}
-            Bài tập: ${partName} | Kết quả: ${currentScore}/${totalQuestions} (${currentPercentage}%) | Thời gian: ${timeMinutes}p
+            Bài thi: ${partName} ${isFullTest ? '(TOÀN BỘ ĐỀ THI - 200 CÂU)' : ''}
+            Kết quả: ${currentScore}/${totalQuestions} (${currentPercentage}%) | Thời gian: ${timeMinutes}p
             MA TRẬN KIẾN THỨC (JSON): ${topicMatrixJson}
         `;
 
         let prompt = `
             ${commonPromptContext}
-            VAI TRÒ: Bạn là "Mentor Expert" - Huấn luyện viên TOEIC chuyên gia về ${isListening ? 'Kỹ năng Nghe' : 'Kỹ năng Đọc'}. Bạn chuyên nghiệp, nhiệt huyết và sâu sắc. 
+            VAI TRÒ: Bạn là "Mentor Expert" - Huấn luyện viên TOEIC chuyên gia.
             
-            NHIỆM VỤ: Phân tích bài làm và đưa ra lời khuyên "chạm đúng chỗ ngứa" của học viên về ${isListening ? 'khả năng phản xạ âm thanh và từ vựng nghe' : 'kỹ năng đọc hiểu và quản lý thời gian'}.
+            NHIỆM VỤ: ${isFullTest 
+                ? 'PHÂN TÍCH CHIẾN THUẬT TOÀN DIỆN. Dựa trên ma trận kiến thức, hãy lọc ra TOP 5 CHỦ ĐIỂM (Topic Tags) YẾU NHẤT của học viên trong bài thi này để tư vấn hành động.' 
+                : `Phân tích bài làm và đưa ra lời khuyên "chạm đúng chỗ ngứa" của học viên về ${isListening ? 'khả năng phản xạ âm thanh' : 'kỹ năng đọc hiểu'}.`}
             
             NGUYÊN TẮC "VOICE & TONE":
-            1. Ngôn ngữ: Tiếng Việt, chuyên nghiệp nhưng gần gũi, khích lệ.
-            2. "shortFeedback": Phải cực kỳ "catchy" (Ví dụ: "🎯 Mục tiêu trong tầm tay!", "⚡ Đang bứt phá phong độ!", "🛡️ Vững vàng nền tảng").
-            3. "detailedAssessment": Sử dụng công thức "Sandwich" (Khen ngợi -> Chỉ ra lỗ hổng -> Hành động cụ thể). Viết 2-3 câu.
-            4. "weaknesses" & "strengths": Trả về tối đa 3 mục, mỗi mục là cụm từ ngắn < 5 chữ.
+            1. Ngôn ngữ: Tiếng Việt, chuyên nghiệp nhưng gần gũi.
+            2. "detailedAssessment": 
+               ${isFullTest 
+                 ? '- Nhận xét về sự phân bổ điểm giữa Listening/Reading.\n- Liệt kê rõ TOP 5 chủ điểm cần cải thiện ngay lập tức.\n- Đưa ra lộ trình ngắn hạn để bứt phá.' 
+                 : '- Sử dụng công thức "Sandwich" (Khen ngợi -> Chỉ ra lỗ hổng -> Hành động cụ thể). Viết 2-3 câu.'}
+            3. "weaknesses" & "strengths": Trả về tối đa 3-5 mục cụm từ ngắn < 5 chữ.
             
             OUTPUT JSON THUẦN TÚY:
             {
@@ -301,13 +306,14 @@ export const evaluateProgress = async (
         const result = await executeAITaskWithRetry({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: {
-                maxOutputTokens: 800,
+                maxOutputTokens: 1000,
                 temperature: 0.4,
                 responseMimeType: "application/json",
             }
         });
 
         const aiData = parseAIResponse(result.response.text());
+        const isPerfect = currentScore === totalQuestions;
 
         return {
             progressScore: aiData.progressScore ?? currentPercentage,
@@ -401,7 +407,7 @@ export const enrichPart5QuestionService = async (questionText: string, options: 
        "optionTranslations": { "A": "...", "B": "...", "C": "...", "D": "..." },
        "explanation": "Giải thích chi tiết tiếng Việt tại sao chọn đáp án đúng, chỉ ra bẫy ngữ pháp/từ vựng. Format HTML sinh động (VD: dùng <b>dày</b>, <br/>).",
        "keyVocabulary": [
-         { "word": "từ_vựng", "type": "n/v/adj/adv", "pronunciation": "/IPA/", "meaning": "nghĩa" }
+         { "word": "từ_vựng", "type": "n/v/adj/adv", "ipa": "/IPA/", "meaning": "nghĩa" }
        ],
        "level": "A1_A2 | B1_B2 | C1"
     }`;
@@ -436,7 +442,7 @@ export const enrichPart5BatchService = async (questions: any[]) => {
          "optionTranslations": { "A": "...", "B": "...", "C": "...", "D": "..." },
          "explanation": "Giải thích chi tiết tiếng Việt format HTML sinh động (dùng <b>, <br/>).",
          "keyVocabulary": [
-           { "word": "...", "type": "...", "pronunciation": "...", "meaning": "..." }
+           { "word": "...", "type": "...", "ipa": "...", "meaning": "..." }
          ],
          "level": "A1_A2 | B1_B2 | C1"
       }

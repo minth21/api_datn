@@ -244,15 +244,15 @@ export const submitPart = async (
             success: true,
             data: {
                 id: savedProgress.progress.id,
-                attemptId: savedProgress.attempt.id, // New Attempt ID
+                attemptId: savedProgress.attempt.id,
                 score: correctCount,
                 total: totalQuestions,
                 percentage,
                 userAnswers: answers,
                 aiAssessment: null,
                 aiProgressScore: percentage,
-                attemptNumber,
-                toeicScore: toeicScore
+                attemptNumber
+                // [REMOVE] toeicScore - Anti-Illusion policy: Only show raw score for Parts
             }
         });
 
@@ -388,6 +388,228 @@ export const submitPart = async (
 };
 
 /**
+ * Submit answers for a Full Test (200 questions)
+ * POST /api/practice/submit-test
+ */
+export const submitFullTest = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const { userId, testId, answers, timeTaken } = req.body;
+
+        if (!userId || !testId || !answers) {
+            res.status(400).json({ success: false, message: 'Missing required fields' });
+            return;
+        }
+
+        // 1. Fetch Test and all its questions
+        const test = await prisma.test.findUnique({
+            where: { id: testId },
+            include: {
+                parts: {
+                    include: {
+                        questions: {
+                            select: { id: true, correctAnswer: true, topic_tag: true }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!test) {
+            res.status(404).json({ success: false, message: 'Test not found' });
+            return;
+        }
+
+        // 2. Map all questions for scoring
+        const allQuestions: any[] = [];
+        test.parts.forEach((p: any) => {
+            p.questions.forEach((q: any) => {
+                allQuestions.push({ ...q, partNumber: p.partNumber, partId: p.id });
+            });
+        });
+
+        const answerMap = new Map(answers.map((a: any) => [a.questionId, a.selectedOption]));
+        
+        // 3. Calculate scores per Section
+        let correctListening = 0;
+        let totalListening = 0;
+        let correctReading = 0;
+        let totalReading = 0;
+
+        const partCorrectCounts: Record<string, number> = {};
+
+        allQuestions.forEach(q => {
+            const selected = answerMap.get(q.id);
+            const isCorrect = selected === q.correctAnswer;
+            
+            if (q.partNumber <= 4) {
+                totalListening++;
+                if (isCorrect) correctListening++;
+            } else {
+                totalReading++;
+                if (isCorrect) correctReading++;
+            }
+
+            // Track for individual parts (for updating UserPartProgress if needed)
+            if (!partCorrectCounts[q.partId]) partCorrectCounts[q.partId] = 0;
+            if (isCorrect) partCorrectCounts[q.partId]++;
+        });
+
+        // 4. Convert to TOEIC Scaled Score (5-495)
+        const listeningScore = calculateScaledScore(correctListening, totalListening || 100, 'LISTENING');
+        const readingScore = calculateScaledScore(correctReading, totalReading || 100, 'READING');
+        const totalScore = listeningScore + readingScore;
+
+        // 5. Transaction: Save Attempt + Update Analytics
+        const result = await (prisma as any).$transaction(async (tx: any) => {
+            // A. Create main TestAttempt
+            const attempt = await tx.testAttempt.create({
+                data: {
+                    userId,
+                    testId,
+                    startTime: new Date(Date.now() - (timeTaken || 0) * 1000),
+                    endTime: new Date(),
+                    durationSeconds: timeTaken || 0,
+                    correctCount: correctListening + correctReading,
+                    totalQuestions: allQuestions.length,
+                    totalScore,
+                    listeningScore,
+                    readingScore
+                }
+            });
+
+            // B. Bulk Save AttemptDetail
+            const detailData = allQuestions.map(q => ({
+                attemptId: attempt.id,
+                questionId: q.id,
+                userAnswer: answerMap.get(q.id) || null,
+                isCorrect: answerMap.get(q.id) === q.correctAnswer
+            }));
+
+            await tx.attemptDetail.createMany({ data: detailData });
+
+            // C. Update UserPartProgress for each Part (Legacy + Progress tracking)
+            for (const part of test.parts) {
+                const pCorrect = partCorrectCounts[part.id] || 0;
+                const pTotal = part.questions.length;
+                
+                // Find latest attempt number
+                const latest = await tx.userPartProgress.findFirst({
+                    where: { userId, partId: part.id },
+                    orderBy: { attemptNumber: 'desc' }
+                });
+
+                await tx.userPartProgress.create({
+                    data: {
+                        userId,
+                        partId: part.id,
+                        attemptNumber: (latest?.attemptNumber || 0) + 1,
+                        score: pCorrect,
+                        totalQuestions: pTotal,
+                        percentage: parseFloat(((pCorrect / pTotal) * 100).toFixed(1)),
+                        userAnswers: JSON.stringify(answers.filter((a: any) => part.questions.some((pq: any) => pq.id === a.questionId))),
+                        toeicScore: calculateScaledScore(pCorrect, pTotal, part.partNumber <= 4 ? 'LISTENING' : 'READING')
+                    }
+                });
+            }
+
+            return attempt;
+        });
+
+        // 6. Refresh Global Estimated Score (Cumulative Raw)
+        await calculateEstimatedScore(userId);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                attemptId: result.id,
+                totalScore,
+                listeningScore,
+                readingScore,
+                correctCount: result.correctCount,
+                totalQuestions: result.totalQuestions
+            }
+        });
+
+        // 7. ASYNC AI Analysis (Top 5 Weakest Tags)
+        (async () => {
+            try {
+                // 1. Fetch User data for context
+                const user = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true, targetScore: true }
+                });
+
+                // 2. Calculate Global Topic Matrix for the whole 200 questions
+                const topicMatrix: Record<string, { correct: number, total: number }> = {};
+                allQuestions.forEach((q: any) => {
+                    const tag = q.topic_tag || 'Tổng quát';
+                    if (!topicMatrix[tag]) topicMatrix[tag] = { correct: 0, total: 0 };
+                    topicMatrix[tag].total++;
+                    const selected = answerMap.get(q.id);
+                    if (selected === q.correctAnswer) {
+                        topicMatrix[tag].correct++;
+                    }
+                });
+
+                // 3. Evaluate progress focusing on Top 5 Weakest Tags
+                const finalAiResult = await evaluateProgress(
+                    correctListening + correctReading,
+                    allQuestions.length,
+                    timeTaken || 0,
+                    user?.name || 'Học viên',
+                    JSON.stringify(topicMatrix),
+                    test.title,
+                    user?.targetScore || undefined,
+                    true // isFullTest = true
+                );
+
+                const aiResultJson = JSON.stringify(finalAiResult);
+
+                // 4. Update Records
+                await prisma.testAttempt.update({
+                    where: { id: result.id },
+                    data: { aiAnalysis: aiResultJson }
+                });
+
+                await (prisma as any).aiAssessment.create({
+                    data: {
+                        userId: userId,
+                        testAttemptId: result.id,
+                        type: 'COACHING',
+                        title: `Phân tích chiến thuật: ${test.title}`,
+                        summary: finalAiResult.shortFeedback || "AI đã hoàn thành phân tích đề thi.",
+                        content: finalAiResult,
+                        score: totalScore,
+                        trend: 'STABLE',
+                        createdAt: new Date()
+                    }
+                });
+
+                // Update User aggregate if needed
+                if (user) {
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: {
+                            lastActiveAt: new Date(),
+                        }
+                    });
+                }
+
+            } catch (err) {
+                console.error("[FullTest AI] Background error:", err);
+            }
+        })();
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Get history for a part (New Structure)
  * GET /api/practice/history/:userId/:partId
  */
@@ -457,7 +679,8 @@ export const getAttemptDetail = async (
                                 optionTranslations: true,
                                 imageUrl: true,
                                 audioUrl: true,
-                                passageTitle: true
+                                passageTitle: true,
+                                keyVocabulary: true
                             }
                         }
                     },

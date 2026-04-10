@@ -185,6 +185,7 @@ export const getStudentDashboard = async (
             success: true,
             data: {
                 user: {
+                    id: userId,
                     name: user.name,
                     progress: user.progress || 0,
                     targetScore: user.targetScore || 800,
@@ -192,8 +193,31 @@ export const getStudentDashboard = async (
                     estimatedListening: user.estimatedListening ?? 0,
                     estimatedReading: user.estimatedReading ?? 0,
                     highestScore: user.highestScore ?? 0,
-                    averageScore: user.averageScore ?? 0,
+                averageScore: user.averageScore ?? 0,
                     totalAttempts: user.totalAttempts ?? 0,
+                    // Individual Part Mastery Scores
+                    ...await (async () => {
+                        const mastery: Record<string, number> = {};
+                        const bestScores = await prisma.userPartProgress.groupBy({
+                            by: ['partId'],
+                            where: { userId },
+                            _max: { score: true }
+                        });
+                        
+                        const partIds = bestScores.map(bs => bs.partId);
+                        const parts = await prisma.part.findMany({
+                            where: { id: { in: partIds } },
+                            select: { id: true, partNumber: true }
+                        });
+                        
+                        bestScores.forEach(bs => {
+                            const part = parts.find(p => p.id === bs.partId);
+                            if (part) {
+                                mastery[`max_p${part.partNumber}`] = bs._max.score || 0;
+                            }
+                        });
+                        return mastery;
+                    })()
                 },
                 streak: updatedStreak,
                 recentActivities: recentActivities.map(a => ({

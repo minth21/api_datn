@@ -135,7 +135,8 @@ export const updateUser = async (id: string, data: any) => {
 
 
 /**
- * Tính toán điểm TOEIC dự kiến dựa trên thành tích TỐT NHẤT (All-time Best) của từng Part
+ * Tính toán điểm TOEIC dự kiến dựa trên KỶ LỤC CÁ NHÂN (Best All-time Raw) của từng Part
+ * Logic: Sum(Max_P1..P4) -> TOEIC_L | Sum(Max_P5..P7) -> TOEIC_R
  */
 export const calculateEstimatedScore = async (userId: string) => {
     // Chỉ tính cho role STUDENT
@@ -146,52 +147,62 @@ export const calculateEstimatedScore = async (userId: string) => {
 
     if (!user || user.role !== Role.STUDENT) return null;
 
-    // 1. Lấy tất cả kết quả làm bài từ trước đến nay của user
-    const results = await prisma.userPartProgress.findMany({
+    // 1. Lấy kỷ lục (Hao nhất) của từng Part
+    const bestScores = await prisma.userPartProgress.groupBy({
+        by: ['partId'],
         where: { userId },
-        include: { part: true }
-    });
-
-    // 2. Tìm điểm số CAO NHẤT cho từng Part
-    const bestScoreByPart: Record<number, number> = {};
-    results.forEach(res => {
-        const pNum = res.part.partNumber;
-        if (pNum >= 1 && pNum <= 7) {
-            bestScoreByPart[pNum] = Math.max(bestScoreByPart[pNum] || 0, res.score);
+        _max: {
+            score: true
         }
     });
 
-    // 3. Tổng hợp số câu đúng cao nhất theo kỹ năng
-    let totalListeningCorrect = 0; // Tổng Part 1, 2, 3, 4 (Tối đa 100)
-    let totalReadingCorrect = 0;   // Tổng Part 5, 6, 7 (Tối đa 100)
+    // 2. Fetch Part Numbers để phân loại Listening/Reading
+    const partIds = bestScores.map(bs => bs.partId);
+    const parts = await prisma.part.findMany({
+        where: { id: { in: partIds } },
+        select: { id: true, partNumber: true }
+    });
 
-    for (let i = 1; i <= 4; i++) {
-        totalListeningCorrect += bestScoreByPart[i] || 0;
-    }
-    for (let i = 5; i <= 7; i++) {
-        totalReadingCorrect += bestScoreByPart[i] || 0;
-    }
+    // Map PartID -> PartNumber
+    const partNumMap: Record<string, number> = {};
+    parts.forEach(p => partNumMap[p.id] = p.partNumber);
 
-    // Giới hạn an toàn 100 câu mỗi mảng
-    totalListeningCorrect = Math.min(100, totalListeningCorrect);
-    totalReadingCorrect = Math.min(100, totalReadingCorrect);
+    // 3. Tính tổng câu đúng theo cụm (Max 100 mỗi cụm)
+    let totalListeningRaw = 0; // P1, 2, 3, 4
+    let totalReadingRaw = 0;    // P5, 6, 7
 
-    // 4. Quy đổi điểm TOEIC từ bảng chuẩn (Không cần đợi đủ bộ)
-    const estimatedL = getListeningScore(totalListeningCorrect);
-    const estimatedR = getReadingScore(totalReadingCorrect);
+    bestScores.forEach(bs => {
+        const pNum = partNumMap[bs.partId];
+        const maxScore = bs._max.score || 0;
+
+        if (pNum >= 1 && pNum <= 4) {
+            totalListeningRaw += maxScore;
+        } else if (pNum >= 5 && pNum <= 7) {
+            totalReadingRaw += maxScore;
+        }
+    });
+
+    // Giới hạn an toàn (Trường hợp dữ liệu rác > 100 câu)
+    totalListeningRaw = Math.min(100, totalListeningRaw);
+    totalReadingRaw = Math.min(100, totalReadingRaw);
+
+    // 4. Quy đổi điểm TOEIC từ bảng chuẩn (Không scaling lẻ tẻ nữa)
+    const estimatedL = getListeningScore(totalListeningRaw);
+    const estimatedR = getReadingScore(totalReadingRaw);
     const totalEstimated = estimatedL + estimatedR;
 
-    // 5. Cập nhật vào DB
+    // 5. Cập nhật vào DB (User board)
     await prisma.user.update({
         where: { id: userId },
         data: {
             estimatedScore: totalEstimated,
             estimatedListening: estimatedL,
-            estimatedReading: estimatedR
+            estimatedReading: estimatedR,
+            highestScore: { set: Math.max(0, totalEstimated) } // Cập nhật luôn kỷ lục tổng
         } as any
     });
 
-    console.log(`[Leaderboard Update] User ${userId}: L:${estimatedL} (Total:${totalListeningCorrect}), R:${estimatedR} (Total:${totalReadingCorrect}), Rank Score:${totalEstimated}`);
+    console.log(`[Score Upgrade] User ${userId}: Raw_L:${totalListeningRaw} -> ${estimatedL}, Raw_R:${totalReadingRaw} -> ${estimatedR}, Total:${totalEstimated}`);
 
-    return { totalEstimated, estimatedL, estimatedR, totalListeningCorrect, totalReadingCorrect };
+    return { totalEstimated, estimatedL, estimatedR, totalListeningRaw, totalReadingRaw };
 };

@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import { prisma } from './prisma'; // Assuming prisma is in the same config folder or accessible
 
 // Configure Cloudinary
 cloudinary.config({
@@ -83,7 +84,10 @@ export const uploadFileToCloudinary = (
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: folder,
-                resource_type: 'auto', // Cloudinary detects type (PDF, zip, etc.)
+                resource_type: 'image',
+                format: 'pdf',
+                access_mode: 'public', // Force public access to avoid "Blocked for delivery"
+                type: 'upload',        // Standard upload type
             },
             (error, result) => {
                 if (error) return reject(error);
@@ -175,6 +179,32 @@ export const cleanupCloudinaryAssets = async (
     });
 
     await Promise.all(deletePromises);
+};
+
+/**
+ * Save Cloudinary upload result to DB for tracking (Antigravity Audit Log)
+ */
+export const saveAssetToDb = async (result: any, uploaderId?: string) => {
+    try {
+        return await prisma.cloudinaryAsset.create({
+            data: {
+                publicId: result.public_id,
+                url: result.secure_url,
+                resourceType: result.resource_type,
+                folder: result.folder,
+                format: result.format,
+                bytes: result.bytes,
+                width: result.width,
+                height: result.height,
+                uploaderId: uploaderId
+            }
+        });
+    } catch (error) {
+        console.error('Failed to log Cloudinary asset to DB:', error);
+        // We don't throw here to avoid breaking the main upload flow 
+        // if just logging fails, but in production you might want stricter handling.
+        return null;
+    }
 };
 
 export default cloudinary;

@@ -57,7 +57,7 @@ export class FeedbackController {
             // 2. Gửi thông báo cho Giáo viên
             await NotificationService.createNotification({
                 userId: targetClass.teacherId,
-                title: `💬 Ý kiến mới từ học viên lớp ${targetClass.className}`,
+                title: `💬 Ý kiến mới từ học viên ${targetClass.className}`,
                 content: `Học viên ${userName} gửi ý kiến: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`,
                 type: 'STUDENT_FEEDBACK' as NotificationType,
                 relatedId: feedback.id
@@ -67,7 +67,7 @@ export class FeedbackController {
             await NotificationService.createNotification({
                 userId: userId,
                 title: '✅ Gửi ý kiến thành công',
-                content: `Ý kiến của bạn đã được gửi tới Giáo viên phụ trách lớp ${targetClass.className}.`,
+                content: `Ý kiến của bạn đã được gửi tới Giáo viên phụ trách ${targetClass.className}.`,
                 type: 'SYSTEM' as NotificationType,
                 relatedId: feedback.id
             });

@@ -40,12 +40,15 @@ export const uploadUserAvatar = async (
         });
 
         // Upload to Cloudinary
-        const { uploadToCloudinary, deleteFromCloudinary, extractPublicId } = await import('../config/cloudinary.config');
+        const { uploadToCloudinary, deleteFromCloudinary, extractPublicId, saveAssetToDb } = await import('../config/cloudinary.config');
 
         const uploadResult = await uploadToCloudinary(
             req.file.buffer,
             'toeic_practice/avatars'
         );
+
+        // Log to DB (Antigravity Audit Log)
+        await saveAssetToDb(uploadResult, userId);
 
         const avatarUrl = uploadResult.secure_url;
 
@@ -262,7 +265,7 @@ export const updateProfile = async (
         const userId = req.user?.id;
         // Strict destructuring - ONLY allow these fields as per security requirement
         // name, email, phoneNumber, dateOfBirth, avatarUrl
-        const { name, email, phoneNumber, dateOfBirth, avatarUrl, allowAiPushNotification } = req.body;
+        const { name, email, phoneNumber, dateOfBirth, avatarUrl, targetScore, allowAiPushNotification } = req.body;
 
         if (!userId) {
             res.status(401).json({
@@ -280,6 +283,7 @@ export const updateProfile = async (
                 phoneNumber: phoneNumber || undefined,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
                 avatarUrl: typeof avatarUrl === 'string' ? avatarUrl : undefined,
+                targetScore: (targetScore && !isNaN(parseInt(targetScore.toString()))) ? parseInt(targetScore.toString()) : undefined,
                 allowAiPushNotification: typeof allowAiPushNotification === 'boolean' ? allowAiPushNotification : undefined,
             },
             select: {

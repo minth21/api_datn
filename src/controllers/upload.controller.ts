@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { uploadExamImageToCloudinary, uploadAudioToCloudinary } from '../config/cloudinary.config';
+import { uploadExamImageToCloudinary, uploadAudioToCloudinary, saveAssetToDb } from '../config/cloudinary.config';
 
 /**
  * Upload image to Cloudinary (Exam Images)
@@ -12,6 +12,9 @@ export const uploadExamImage = async (req: Request, res: Response, next: NextFun
         }
 
         const result = await uploadExamImageToCloudinary(req.file.buffer);
+        
+        // Log to DB (Antigravity Audit Log)
+        await saveAssetToDb(result, (req as any).user?.id);
 
         res.status(200).json({
             success: true,
@@ -35,6 +38,9 @@ export const uploadAudio = async (req: Request, res: Response, next: NextFunctio
         }
 
         const result = await uploadAudioToCloudinary(req.file.buffer);
+
+        // Log to DB (Antigravity Audit Log)
+        await saveAssetToDb(result, (req as any).user?.id);
 
         res.status(200).json({
             success: true,
